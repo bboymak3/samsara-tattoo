@@ -1,0 +1,791 @@
+     1→// functions/_lib/render-product.js
+     2→// Extracted from functions/producto/[slug].js — pure rendering logic for a product page.
+     3→
+     4→export function esc(s) { return s ? s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;') : ''; }
+     5→export function escJs(s) { return s ? s.replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/\n/g,'\\n') : ''; }
+     6→
+     7→export function getCatBadge(c) {
+     8→  return {general:'badge-general',vehiculos:'badge-vehiculos',inmuebles:'badge-inmuebles',electronica:'badge-electronica',servicios:'badge-servicios',ropa:'badge-ropa',hogar:'badge-hogar'}[c]||'badge-general';
+     9→}
+    10→export function getCatLabel(c) {
+    11→  return {general:'General',vehiculos:'Vehiculos',inmuebles:'Inmuebles',electronica:'Electronica',servicios:'Servicios',ropa:'Ropa',hogar:'Hogar'}[c]||c||'General';
+    12→}
+    13→export function getCatIcon(c) {
+    14→  return {general:'fa-tag',vehiculos:'fa-car',inmuebles:'fa-building',electronica:'fa-laptop',servicios:'fa-wrench',ropa:'fa-tshirt',hogar:'fa-couch'}[c]||'fa-tag';
+    15→}
+    16→export function fmtDate(d) {
+    17→  if(!d) return '';
+    18→  try {
+    19→    var ds = String(d).trim();
+    20→    if (ds.includes('T')) { /* ISO ya tiene T */ }
+    21→    else if (ds.includes(' ')) { ds = ds.replace(' ', 'T'); } /* SQLite: 2025-01-15 12:30:00 → 2025-01-15T12:30:00 */
+    22→    else { ds = ds + 'T00:00:00'; } /* solo fecha: 2025-01-15 */
+    23→    const dt = new Date(ds);
+    24→    if (isNaN(dt.getTime())) return d;
+    25→    return dt.getDate()+' '+['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'][dt.getMonth()]+' '+dt.getFullYear();
+    26→  } catch(e) { return d; }
+    27→}
+    28→
+    29→export function getVideoEmbed(url) {
+    30→  if (!url) return '';
+    31→  const ytMatch = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]+)/);
+    32→  if (ytMatch) return `<iframe src="https://www.youtube.com/embed/${ytMatch[1]}" frameborder="0" allowfullscreen></iframe>`;
+    33→  const ytShortsMatch = url.match(/youtube\.com\/shorts\/([a-zA-Z0-9_-]+)/);
+    34→  if (ytShortsMatch) return `<iframe src="https://www.youtube.com/embed/${ytShortsMatch[1]}" frameborder="0" allowfullscreen></iframe>`;
+    35→  const ttMatch = url.match(/tiktok\.com\/@[^/]+\/video\/(\d+)/);
+    36→  if (ttMatch) return `<iframe data-tiktok src="https://www.tiktok.com/embed/v2/${ttMatch[1]}" frameborder="0" allowfullscreen></iframe>`;
+    37→  if (/\.(mp4|webm|ogg|mov)(\?|$)/i.test(url)) {
+    38→    return `<video src="${esc(url)}" controls playsinline preload="metadata" style="width:100%;border-radius:12px;background:#000;"></video>`;
+    39→  }
+    40→  return `<iframe src="${esc(url)}" frameborder="0" allowfullscreen></iframe>`;
+    41→}
+    42→
+    43→export async function renderProductPage(env, product, options) {
+    44→  const { canonicalUrl, productTypeSlug } = options;
+    45→
+    46→  // Parse image: could be JSON array or plain URL
+    47→  let productImages = [];
+    48→  let productImage = product.image || '';
+    49→  try {
+    50→      const parsed = JSON.parse(productImage);
+    51→      if (Array.isArray(parsed) && parsed.length > 0) {
+    52→          productImages = parsed.filter(u => u && u.trim());
+    53→      }
+    54→  } catch(e) {}
+    55→  if (productImages.length === 0 && productImage) {
+    56→      productImages = [productImage];
+    57→  }
+    58→  const mainImage = productImages[0] || '';
+    59→
+    60→  const baseUrl = 'https://en-santiago.pages.dev';
+    61→  const title = product.name || 'Producto';
+    62→  const price = product.price ? `$${Number(product.price).toLocaleString('es-CL')}` : '';
+    63→  const description = product.description
+    64→    ? product.description.substring(0, 160)
+    65→    : `${title}${price ? ' - ' + price : ''} - Disponible en En Santiago Marketplace, Santiago de Chile.`;
+    66→  const imageUrl = mainImage || `${baseUrl}/logo.png`;
+    67→
+    68→  // Fetch 3 related products - try same category first, fallback to same business, then any
+    69→  let relatedProducts = [];
+    70→  try {
+    71→    if (product.category) {
+    72→      const byCategory = await env.DB.prepare(
+    73→        `SELECT p.id, p.name, p.price, p.image, p.slug, p.category
+    74→         FROM products p
+    75→         WHERE p.category = ? AND p.id != ? AND (p.status = 'approved' OR p.status IS NULL)
+    76→         ORDER BY RANDOM() LIMIT 3`
+    77→      ).bind(product.category, product.id).all();
+    78→      relatedProducts = byCategory.results || [];
+    79→    }
+    80→    if (relatedProducts.length === 0 && product.business_id) {
+    81→      const byBusiness = await env.DB.prepare(
+    82→        `SELECT p.id, p.name, p.price, p.image, p.slug, p.category
+    83→         FROM products p
+    84→         WHERE p.business_id = ? AND p.id != ? AND (p.status = 'approved' OR p.status IS NULL)
+    85→         ORDER BY RANDOM() LIMIT 3`
+    86→      ).bind(product.business_id, product.id).all();
+    87→      relatedProducts = byBusiness.results || [];
+    88→    }
+    89→    if (relatedProducts.length === 0) {
+    90→      const anyProducts = await env.DB.prepare(
+    91→        `SELECT p.id, p.name, p.price, p.image, p.slug, p.category
+    92→         FROM products p
+    93→         WHERE p.id != ? AND (p.status = 'approved' OR p.status IS NULL)
+    94→         ORDER BY RANDOM() LIMIT 3`
+    95→      ).bind(product.id).all();
+    96→      relatedProducts = anyProducts.results || [];
+    97→    }
+    98→  } catch(e) {
+    99→    console.error('Related products error:', e);
+   100→  }
+   101→
+   102→  const catBadge = getCatBadge(product.category);
+   103→  const catLabel = getCatLabel(product.category);
+   104→  const catIcon = getCatIcon(product.category);
+   105→  const waNumber = product.business_whatsapp ? product.business_whatsapp.replace(/[^0-9]/g, '') : '';
+   106→  const waMsg = encodeURIComponent('Hola, estoy interesado en: ' + product.name);
+   107→  const waLink = waNumber ? `https://wa.me/${waNumber}?text=${waMsg}` : '';
+   108→  const bizTipo = (product.business_type || 'negocio').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+   109→  const bizCat = product.category_slug || 'otro';
+   110→  const bizLink = product.business_slug ? '/' + bizTipo + '/' + bizCat + '/' + product.business_slug : '';
+   111→
+   112→  // Build related products HTML (compact cards) — links use /producto/${rpCategorySlug}/${rp.slug}
+   113→  let relatedHtml = '';
+   114→  if (relatedProducts.length > 0) {
+   115→    const cards = relatedProducts.map(rp => {
+   116→      const rpPrice = rp.price ? `$${Number(rp.price).toLocaleString('es-CL')}` : '';
+   117→      const rpSlug = rp.slug || rp.id;
+   118→      const rpBadge = getCatBadge(rp.category);
+   119→      const rpIcon = getCatIcon(rp.category);
+   120→      const rpCategorySlug = rp.category || 'general';
+   121→      let rpImg = '';
+   122→      if (rp.image) {
+   123→        try {
+   124→          const parsed = JSON.parse(rp.image);
+   125→          if (Array.isArray(parsed) && parsed.length > 0) rpImg = parsed[0];
+   126→        } catch(e) {}
+   127→        if (!rpImg && String(rp.image).startsWith('http')) rpImg = rp.image;
+   128→      }
+   129→      return `
+   130→          <a href="/producto/${rpCategorySlug}/${rpSlug}" class="rp-card">
+   131→            <div class="rp-card-img">
+   132→              ${rpImg ? `<img src="${esc(rpImg)}" alt="${esc(rp.name)}" loading="lazy" onerror="this.style.display='none'">` : `<div class="rp-card-ph"><i class="fas fa-image"></i></div>`}
+   133→              <span class="rp-badge ${rpBadge}"><i class="fas ${rpIcon}"></i></span>
+   134→            </div>
+   135→            <div class="rp-card-body">
+   136→              <div class="rp-card-name">${esc(rp.name)}</div>
+   137→              ${rpPrice ? `<div class="rp-card-price">${rpPrice}</div>` : ''}
+   138→            </div>
+   139→          </a>`;
+   140→    }).join('');
+   141→
+   142→    relatedHtml = `
+   143→        <div class="pd-section-related">
+   144→          <div class="pd-section-title"><i class="fas fa-boxes-stacked"></i> Productos Relacionados</div>
+   145→          <div class="rp-grid">${cards}</div>
+   146→        </div>`;
+   147→  }
+   148→
+   149→  // Pre-compute escJs values as plain variables (esbuild IIFE limitation)
+   150→  const _escTitle = escJs(title);
+   151→  const _escDesc = escJs(product.description || title);
+   152→
+   153→  // Build breadcrumb with optional product type
+   154→  let breadcrumbHtml = `<a href="/"><i class="fas fa-home"></i></a>
+   155→            <span class="sep"><i class="fas fa-chevron-right"></i></span>
+   156→            <a href="/marketplace.html"><i class="fas fa-shopping-bag"></i> Marketplace</a>`;
+   157→  if (productTypeSlug) {
+   158→    const tipoLabel = productTypeSlug.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+   159→    breadcrumbHtml += `
+   160→            <span class="sep"><i class="fas fa-chevron-right"></i></span>
+   161→            <a href="/tipo/${esc(productTypeSlug)}"><i class="fas fa-tag"></i> ${esc(tipoLabel)}</a>`;
+   162→  }
+   163→  breadcrumbHtml += `
+   164→            <span class="sep"><i class="fas fa-chevron-right"></i></span>
+   165→            <span>${esc(title)}</span>`;
+   166→
+   167→  const html = `<!DOCTYPE html>
+   168→<html lang="es">
+   169→<head>
+   170→<!-- Google Tag Manager -->
+   171→<script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+   172→new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+   173→j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+   174→'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+   175→})(window,document,'script','dataLayer','GTM-TMH9V9QQ');</script>
+   176→<!-- End Google Tag Manager -->
+   177→<!-- Google tag (gtag.js) -->
+   178→<script async src="https://www.googletagmanager.com/gtag/js?id=G-RYF2N8ZD15"></script>
+   179→<script>
+   180→  window.dataLayer = window.dataLayer || [];
+   181→  function gtag(){dataLayer.push(arguments);}
+   182→  gtag('js', new Date());
+   183→
+   184→  gtag('config', 'G-RYF2N8ZD15');
+   185→</script>
+   186→    <meta charset="UTF-8">
+   187→    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+   188→    <link rel="icon" type="image/jpeg" href="/images/favicon.jpeg">
+   189→    <title>${esc(title)}${price ? ' - ' + price : ''} - En Santiago Marketplace</title>
+   190→    <meta name="description" content="${esc(description)}">
+   191→    <meta name="robots" content="index, follow">
+   192→    <link rel="canonical" href="${canonicalUrl}">
+   193→    <meta property="og:type" content="product">
+   194→    <meta property="og:title" content="${esc(title)}${price ? ' - ' + price : ''}">
+   195→    <meta property="og:description" content="${esc(description)}">
+   196→    <meta property="og:image" content="${imageUrl}">
+   197→    <meta property="og:url" content="${canonicalUrl}">
+   198→    <meta property="og:site_name" content="En Santiago Marketplace">
+   199→    <meta property="og:locale" content="es_CL">
+   200→    <meta property="product:price:amount" content="${product.price || '0'}">
+   201→    <meta property="product:price:currency" content="USD">
+   202→    <meta name="twitter:card" content="summary_large_image">
+   203→    <meta name="twitter:title" content="${esc(title)} - En Santiago">
+   204→    <meta name="twitter:description" content="${esc(description)}">
+   205→    <meta name="twitter:image" content="${imageUrl}">
+   206→    <!-- JSON-LD: Product + BreadcrumbList -->
+   207→    <script type="application/ld+json">${JSON.stringify((() => {
+   208→      const ld = {
+   209→        "@context": "https://schema.org",
+   210→        "@type": "Product",
+   211→        "name": title,
+   212→        "description": product.description || description,
+   213→        "image": productImages.length > 0 ? productImages : [imageUrl],
+   214→        "url": canonicalUrl,
+   215→        "brand": product.business_name ? { "@type": "Brand", "name": product.business_name } : undefined,
+   216→        "offers": {
+   217→          "@type": "Offer",
+   218→          "price": product.price || "0",
+   219→          "priceCurrency": "USD",
+   220→          "availability": "https://schema.org/InStock",
+   221→          "itemCondition": "https://schema.org/NewCondition",
+   222→          "seller": {
+   223→            "@type": "Organization",
+   224→            "name": product.business_name || "En Santiago"
+   225→          }
+   226→        }
+   227→      };
+   228→      return ld;
+   229→    })())}</script>
+   230→    <script type="application/ld+json">${(() => {
+   231→      const crumbs = [
+   232→        { "@type": "ListItem", "position": 1, "name": "Inicio", "item": "https://en-santiago.pages.dev/" },
+   233→        { "@type": "ListItem", "position": 2, "name": "Marketplace", "item": "https://en-santiago.pages.dev/marketplace.html" }
+   234→      ];
+   235→      if (productTypeSlug) {
+   236→        crumbs.push({ "@type": "ListItem", "position": crumbs.length + 1, "name": productTypeSlug.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase()), "item": "https://en-santiago.pages.dev/tipo/" + encodeURIComponent(productTypeSlug) });
+   237→      }
+   238→      if (product.category) {
+   239→        crumbs.push({ "@type": "ListItem", "position": crumbs.length + 1, "name": product.category, "item": "https://en-santiago.pages.dev/marketplace.html?categoria=" + encodeURIComponent(product.category) });
+   240→      }
+   241→      crumbs.push({ "@type": "ListItem", "position": crumbs.length + 1, "name": title, "item": canonicalUrl });
+   242→      return JSON.stringify({ "@context": "https://schema.org", "@type": "BreadcrumbList", "itemListElement": crumbs });
+   243→    })()}</script>
+   244→    <link rel="stylesheet" href="/css/styles.css?v=4">
+   245→    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+   246→    <link rel="manifest" href="/manifest.json">
+   247→    <style>
+   248→        * { box-sizing:border-box; }
+   249→        body { background:#f5f5f5; margin:0; font-family:system-ui,-apple-system,sans-serif; }
+   250→
+   251→        /* === NAVBAR (matching main site) === */
+   252→        .navbar { background:#fff; position:sticky; top:0; z-index:1000; box-shadow:0 1px 3px rgba(0,0,0,0.06); }
+   253→        .nav-container { max-width:1200px; margin:0 auto; padding:0 16px; display:flex; align-items:center; justify-content:space-between; height:60px; position:relative; }
+   254→        .nav-logo { display:flex; align-items:center; gap:8px; text-decoration:none; font-size:1.3rem; font-weight:800; color:#1a73e8; flex-shrink:0; }
+   255→        .nav-logo:hover { opacity:0.9; }
+   256→        .nav-logo i { font-size:1.4rem; }
+   257→        .brand-name { font-size:1.2rem; font-weight:800; }
+   258→        .nav-toggle { display:none; background:none; border:none; font-size:1.4rem; color:#1e293b; cursor:pointer; padding:8px; }
+   259→        .nav-menu { display:flex; align-items:center; list-style:none; margin:0; padding:0; gap:2px; }
+   260→        .nav-menu li { position:relative; }
+   261→        .nav-link { display:flex; align-items:center; gap:5px; padding:8px 14px; color:#475569; text-decoration:none; font-size:0.9rem; font-weight:500; border-radius:8px; transition:all .2s; white-space:nowrap; }
+   262→        .nav-link:hover { background:#f1f5f9; color:#1a73e8; }
+   263→        .nav-link.active { color:#1a73e8; font-weight:600; }
+   264→        .nav-link.nav-btn { background:#1a73e8; color:#fff; font-weight:600; border-radius:8px; padding:8px 18px; }
+   265→        .nav-link.nav-btn:hover { background:#1557b0; color:#fff; }
+   266→        .nav-dropdown-toggle { display:flex; align-items:center; gap:5px; padding:8px 14px; color:#475569; background:none; border:none; font-size:0.9rem; font-weight:500; cursor:pointer; border-radius:8px; transition:all .2s; font-family:inherit; }
+   267→        .nav-dropdown-toggle:hover { background:#f1f5f9; color:#1a73e8; }
+   268→        .nav-dropdown-toggle i.fa-chevron-down { font-size:0.65rem; transition:transform .2s; }
+   269→        .nav-dropdown-menu { display:none; position:absolute; top:100%; left:0; min-width:200px; background:#fff; border-radius:10px; box-shadow:0 8px 24px rgba(0,0,0,0.12); border:1px solid #e5e7eb; padding:6px; list-style:none; z-index:100; }
+   270→        .nav-dropdown-menu.active { display:block; }
+   271→        .nav-dropdown-menu .nav-link { padding:10px 14px; font-size:0.9rem; border-radius:8px; }
+   272→        .nav-dropdown-menu .nav-link i { width:18px; text-align:center; }
+   273→        .nav-dropdown-menu .nav-link:hover { background:#EFF6FF; color:#006EE3; }
+   274→        .nav-dropdown-divider { border:none; border-top:1px solid #f1f5f9; margin:4px 0; }
+   275→        .nav-user { display:flex; align-items:center; gap:4px; }
+   276→        .nav-user.hidden { display:none; }
+   277→        .btn-logout { display:flex; align-items:center; gap:5px; padding:8px 14px; color:#dc3545; background:none; border:none; font-size:0.9rem; cursor:pointer; border-radius:8px; transition:all .2s; font-family:inherit; }
+   278→        .btn-logout:hover { background:#fef2f2; }
+   279→        .nav-mobile-cta { display:none; }
+   280→        @media (max-width:900px) {
+   281→            .nav-toggle { display:block; }
+   282→            .nav-menu { display:none; position:absolute; top:60px; left:0; right:0; background:#fff; flex-direction:column; padding:12px 16px 16px; box-shadow:0 8px 24px rgba(0,0,0,0.1); border-top:1px solid #e5e7eb; gap:2px; }
+   283→            .nav-menu.active { display:flex; }
+   284→            .nav-link { padding:12px 16px; font-size:1rem; width:100%; }
+   285→            .nav-link.nav-btn { text-align:center; justify-content:center; margin-top:8px; }
+   286→            .nav-dropdown-menu { position:static; box-shadow:none; border:none; padding-left:16px; }
+   287→            .nav-dropdown-menu.active { display:block; }
+   288→            .nav-mobile-cta { display:block; margin-top:8px; }
+   289→            .nav-mobile-cta a { display:flex; align-items:center; justify-content:center; gap:8px; padding:14px; border-radius:10px; font-size:1rem; font-weight:600; text-decoration:none; }
+   290→            .nav-mobile-cta-marketplace { background:linear-gradient(135deg,#006EE3,#3B9AFF); color:#fff; }
+   291→            .nav-mobile-cta-marketplace:hover { opacity:0.9; }
+   292→        }
+   293→
+   294→        /* === PRODUCT FICHA (large size) === */
+   295→        .pd-wrap { max-width:900px; margin:0 auto; padding:24px 21px 72px; }
+   296→        .pd-breadcrumb { display:flex; align-items:center; gap:9px; font-size:1rem; color:#94a3b8; margin-bottom:21px; flex-wrap:wrap; }
+   297→        .pd-breadcrumb a { color:#006EE3; text-decoration:none; font-weight:500; }
+   298→        .pd-breadcrumb a:hover { text-decoration:underline; }
+   299→        .pd-breadcrumb .sep { color:#cbd5e1; font-size:0.9rem; }
+   300→
+   301→        /* Main card */
+   302→        .pd-card { background:#fff; border-radius:20px; border:1px solid #e5e7eb; overflow:hidden; box-shadow:0 3px 12px rgba(0,0,0,0.06); }
+   303→
+   304→        /* Image */
+   305→        .pd-img { position:relative; width:100%; height:320px; background:#EFF6FF; overflow:hidden; }
+   306→        .pd-img img { width:100%; height:100%; object-fit:cover; display:block; }
+   307→        .pd-img-ph { width:100%; height:100%; display:flex; align-items:center; justify-content:center; color:#006EE3; font-size:3rem; opacity:0.25; }
+   308→
+   309→        /* Category badge */
+   310→        .pd-cat-badge { position:absolute; top:15px; left:15px; padding:6px 15px; border-radius:18px; font-size:1rem; font-weight:600; text-transform:uppercase; letter-spacing:0.3px; color:#fff; z-index:2; }
+   311→        .badge-general { background:rgba(99,102,241,.85); }
+   312→        .badge-vehiculos { background:rgba(239,68,68,.85); }
+   313→        .badge-inmuebles { background:rgba(245,158,11,.85); }
+   314→        .badge-electronica { background:rgba(14,165,233,.85); }
+   315→        .badge-servicios { background:rgba(168,85,247,.85); }
+   316→        .badge-ropa { background:rgba(236,72,153,.85); }
+   317→        .badge-hogar { background:rgba(0,110,227,.85); }
+   318→
+   319→        /* Card body */
+   320→        .pd-body { padding:20px 24px 24px; }
+   321→        .pd-biz-name { display:flex; align-items:center; gap:6px; font-size:1.1rem; color:#64748b; margin-bottom:6px; text-decoration:none; }
+   322→        .pd-biz-name:hover { color:#1a73e8; }
+   323→        .pd-biz-name i { color:#006EE3; font-size:1rem; }
+   324→        .pd-title { font-size:1.65rem; font-weight:700; color:#0f172a; margin:0 0 6px; line-height:1.3; letter-spacing:-0.2px; }
+   325→        .pd-price { font-size:1.7rem; font-weight:800; color:#006EE3; margin:0 0 12px; }
+   326→        .pd-desc { font-size:1.2rem; color:#475569; line-height:1.6; margin:0 0 18px; display:-webkit-box; -webkit-line-clamp:4; -webkit-box-orient:vertical; overflow:hidden; }
+   327→        .pd-meta { display:flex; flex-wrap:wrap; gap:9px; margin-bottom:21px; }
+   328→        .pd-meta-chip { display:flex; align-items:center; gap:6px; padding:7px 14px; background:#f8fafc; border-radius:10px; font-size:1rem; color:#475569; border:1px solid #f1f5f9; }
+   329→        .pd-meta-chip i { color:#006EE3; font-size:1rem; }
+   330→        .pd-actions { display:flex; gap:12px; flex-wrap:wrap; }
+   331→        .pd-btn { display:inline-flex; align-items:center; gap:9px; padding:14px 28px; border-radius:15px; font-size:1.2rem; font-weight:600; text-decoration:none; cursor:pointer; transition:all .25s; font-family:inherit; border:none; }
+   332→        .pd-btn-wa { background:linear-gradient(135deg,#25d366,#128c7e); color:#fff; box-shadow:0 3px 12px rgba(37,211,102,.3); }
+   333→        .pd-btn-wa:hover { box-shadow:0 6px 21px rgba(37,211,102,.45); transform:translateY(-2px); color:#fff; }
+   334→        .pd-btn-out { background:#fff; color:#475569; border:2px solid #e2e8f0; }
+   335→        .pd-btn-out:hover { border-color:#006EE3; color:#006EE3; background:#EFF6FF; }
+   336→
+   337→        /* Business section */
+   338→        .pd-divider { border:none; border-top:1px solid #f1f5f9; margin:0; }
+   339→        .pd-biz-section { padding:16px 24px; }
+   340→        .pd-biz-section-label { font-size:1rem; font-weight:600; text-transform:uppercase; letter-spacing:0.5px; color:#94a3b8; margin-bottom:12px; }
+   341→        .pd-biz-card { display:flex; align-items:center; gap:18px; padding:15px 18px; background:linear-gradient(135deg,#EFF6FF,#EFF6FF); border:2px solid #d1fae5; border-radius:18px; text-decoration:none; transition:all .25s; }
+   342→        .pd-biz-card:hover { border-color:#006EE3; box-shadow:0 5px 18px rgba(0,110,227,.1); }
+   343→        .pd-biz-icon { width:50px; height:50px; border-radius:13px; background:linear-gradient(135deg,#006EE3,#3B9AFF); display:flex; align-items:center; justify-content:center; color:#fff; font-size:1.2rem; flex-shrink:0; }
+   344→        .pd-biz-info { flex:1; min-width:0; }
+   345→        .pd-biz-name-card { font-size:1.25rem; font-weight:700; color:#0f172a; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+   346→        .pd-biz-loc { font-size:1rem; color:#64748b; }
+   347→        .pd-biz-arrow { color:#006EE3; font-size:1.05rem; flex-shrink:0; }
+   348→
+   349→        /* === RELATED PRODUCTS (3-col compact grid) === */
+   350→        .pd-section-related { margin-top:27px; }
+   351→        .pd-section-title { font-size:1.3rem; font-weight:700; color:#0f172a; margin-bottom:15px; display:flex; align-items:center; gap:9px; }
+   352→        .pd-section-title i { color:#006EE3; font-size:1.17rem; }
+   353→        .rp-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; }
+   354→        .rp-card { background:#fff; border-radius:15px; border:1px solid #e5e7eb; overflow:hidden; text-decoration:none; color:inherit; transition:all .25s; }
+   355→        .rp-card:hover { border-color:#006EE3; box-shadow:0 5px 15px rgba(0,110,227,.1); transform:translateY(-3px); }
+   356→        .rp-card-img { position:relative; width:100%; padding-top:75%; background:#EFF6FF; overflow:hidden; }
+   357→        .rp-card-img img { position:absolute; top:0; left:0; width:100%; height:100%; object-fit:cover; }
+   358→        .rp-card-ph { position:absolute; top:0; left:0; width:100%; height:100%; display:flex; align-items:center; justify-content:center; color:#006EE3; font-size:1.65rem; opacity:0.25; }
+   359→        .rp-badge { position:absolute; top:8px; left:8px; width:30px; height:30px; border-radius:9px; display:flex; align-items:center; justify-content:center; font-size:0.75rem; color:#fff; }
+   360→        .rp-card-body { padding:12px 14px 14px; }
+   361→        .rp-card-name { font-size:1rem; font-weight:600; color:#1e293b; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-bottom:3px; }
+   362→        .rp-card-price { font-size:1.1rem; font-weight:700; color:#006EE3; }
+   363→
+   364→        .pd-video { width:100%; border-radius:16px; overflow:hidden; box-shadow:0 4px 20px rgba(0,0,0,0.1); }
+   365→        .pd-video iframe { width:100%; aspect-ratio:16/9; display:block; }
+   366→        .pd-video iframe[data-tiktok] { aspect-ratio:9/16; max-width:320px; margin:0 auto; }
+   367→
+   368→        /* === LIGHTBOX === */
+   369→        .pd-lightbox { display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.92);align-items:center;justify-content:center;flex-direction:column; }
+   370→        .pd-lightbox.active { display:flex; }
+   371→        .pd-lightbox img { max-width:92vw;max-height:82vh;object-fit:contain;border-radius:8px; }
+   372→        .pd-lightbox-close { position:absolute;top:16px;right:20px;background:none;border:none;color:#fff;font-size:2rem;cursor:pointer;z-index:10001;width:44px;height:44px;display:flex;align-items:center;justify-content:center;border-radius:50%;transition:background .2s; }
+   373→        .pd-lightbox-close:hover { background:rgba(255,255,255,0.15); }
+   374→        .pd-lightbox-nav { position:absolute;top:50%;transform:translateY(-50%);background:rgba(255,255,255,0.12);border:none;color:#fff;font-size:1.5rem;cursor:pointer;width:48px;height:48px;border-radius:50%;display:flex;align-items:center;justify-content:center;transition:background .2s;z-index:10001; }
+   375→        .pd-lightbox-nav:hover { background:rgba(255,255,255,0.3); }
+   376→        .pd-lightbox-prev { left:16px; }
+   377→        .pd-lightbox-next { right:16px; }
+   378→        .pd-lightbox-counter { color:rgba(255,255,255,0.7);font-size:0.85rem;margin-top:12px; }
+   379→
+   380→        /* === COMMENTS SECTION === */
+   381→        .pd-comments { padding:20px 24px 24px; }
+   382→        .pd-comments-title { font-size:1.15rem; font-weight:700; color:#0f172a; margin-bottom:16px; display:flex; align-items:center; gap:8px; }
+   383→        .pd-comments-title i { color:#006EE3; }
+   384→        .pd-comment-form { display:flex; gap:10px; margin-bottom:20px; }
+   385→        .pd-comment-input { flex:1; padding:12px 16px; border:2px solid #e2e8f0; border-radius:12px; font-size:0.95rem; font-family:inherit; resize:none; outline:none; transition:border-color .2s; min-height:44px; max-height:120px; }
+   386→        .pd-comment-input:focus { border-color:#006EE3; }
+   387→        .pd-comment-input::placeholder { color:#94a3b8; }
+   388→        .pd-comment-btn { padding:12px 20px; background:#006EE3; color:#fff; border:none; border-radius:12px; font-size:0.95rem; font-weight:600; cursor:pointer; transition:all .2s; font-family:inherit; white-space:nowrap; }
+   389→        .pd-comment-btn:hover { background:#005bb5; }
+   390→        .pd-comment-btn:disabled { background:#94a3b8; cursor:not-allowed; }
+   391→        .pd-comment-login-msg { padding:16px; background:#f8fafc; border:1px dashed #cbd5e1; border-radius:12px; text-align:center; color:#64748b; font-size:0.95rem; margin-bottom:16px; }
+   392→        .pd-comment-login-msg a { color:#006EE3; font-weight:600; text-decoration:none; }
+   393→        .pd-comment-login-msg a:hover { text-decoration:underline; }
+   394→        .pd-comments-list { display:flex; flex-direction:column; gap:12px; }
+   395→        .pd-comment-item { display:flex; gap:12px; padding:14px; background:#f8fafc; border-radius:14px; border:1px solid #f1f5f9; }
+   396→        .pd-comment-avatar { width:38px; height:38px; border-radius:50%; background:linear-gradient(135deg,#006EE3,#3B9AFF); display:flex; align-items:center; justify-content:center; color:#fff; font-weight:700; font-size:0.85rem; flex-shrink:0; }
+   397→        .pd-comment-body { flex:1; min-width:0; }
+   398→        .pd-comment-header { display:flex; align-items:center; gap:8px; margin-bottom:4px; flex-wrap:wrap; }
+   399→        .pd-comment-name { font-weight:600; font-size:0.9rem; color:#0f172a; }
+   400→        .pd-comment-date { font-size:0.78rem; color:#94a3b8; }
+   401→        .pd-comment-text { font-size:0.95rem; color:#334155; line-height:1.5; word-wrap:break-word; }
+   402→        .pd-comment-badge { display:inline-block; padding:2px 8px; background:#EFF6FF; color:#006EE3; font-size:0.7rem; font-weight:600; border-radius:6px; }
+   403→        .pd-comments-empty { text-align:center; padding:24px; color:#94a3b8; font-size:0.95rem; }
+   404→        .pd-comments-loading { text-align:center; padding:20px; color:#94a3b8; font-size:0.9rem; }
+   405→        @media (max-width:640px) {
+   406→            .pd-wrap { padding:15px 12px 54px; }
+   407→            .pd-body { padding:18px 18px 21px; }
+   408→            .pd-biz-section { padding:15px 18px; }
+   409→            .pd-comments { padding:16px 18px 20px; }
+   410→            .pd-title { font-size:1.5rem; }
+   411→            .pd-price { font-size:1.55rem; }
+   412→            .pd-img { height:270px; }
+   413→            .rp-grid { grid-template-columns:repeat(3,1fr); gap:11px; }
+   414→            .rp-card-body { padding:10px 12px 12px; }
+   415→            .rp-card-name { font-size:0.9rem; }
+   416→            .rp-card-price { font-size:1rem; }
+   417→            .pd-actions { flex-direction:column; }
+   418→            .pd-btn { justify-content:center; }
+   419→            .pd-breadcrumb { font-size:0.9rem; }
+   420→            .pd-biz-name { font-size:1rem; }
+   421→            .pd-desc { font-size:1.1rem; }
+   422→            .pd-meta-chip { font-size:0.9rem; padding:6px 12px; }
+   423→            .pd-section-title { font-size:1.15rem; }
+   424→            .pd-biz-name-card { font-size:1.15rem; }
+   425→            .pd-biz-loc { font-size:0.9rem; }
+   426→            .pd-cat-badge { font-size:0.9rem; padding:5px 12px; }
+   427→            .pd-comment-form { flex-direction:column; }
+   428→        }
+   429→    </style>
+   430→</head>
+   431→<body>
+   432→<!-- Google Tag Manager (noscript) -->
+   433→<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-TMH9V9QQ"
+   434→height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+   435→<!-- End Google Tag Manager (noscript) -->
+   436→    <nav class="navbar" id="navbar">
+   437→        <div class="nav-container">
+   438→            <a href="/" class="nav-logo"><img src="/images/favicon.jpeg" alt="En Santiago" style="height:32px;width:auto;border-radius:6px;margin-right:4px;"> <span class="brand-name">En Santiago</span></a>
+   439→            <button class="nav-toggle" id="navToggle" aria-label="Abrir men\u00fa">
+   440→                <i class="fas fa-bars"></i>
+   441→            </button>
+   442→            <ul class="nav-menu" id="navMenu">
+   443→                <li><a href="/" class="nav-link active">Inicio</a></li>
+   444→                <li><a href="/marketplace.html" class="nav-link">Marketplace</a></li>
+   445→                <li><a href="/empleo.html" class="nav-link">Empleo</a></li>
+   446→                <li><a href="/entretenimiento.html" class="nav-link">Entretenimiento</a></li>
+   447→                <li><a href="/cupones.html" class="nav-link">Cupones</a></li>
+   448→                <li class="nav-dropdown">
+   449→                    <button class="nav-dropdown-toggle" aria-label="M\u00e1s opciones">
+   450→                        M\u00e1s <i class="fas fa-chevron-down"></i>
+   451→                    </button>
+   452→                    <ul class="nav-dropdown-menu" id="navbarDropdown">
+   453→                        <li><a href="/marketplace.html" class="nav-link"><i class="fas fa-shopping-bag"></i> Marketplace</a></li>
+   454→                        <li class="nav-dropdown-divider"></li>
+   455→                        <li><a href="/emergencia.html" class="nav-link" style="color:#dc3545;"><i class="fas fa-exclamation-triangle"></i> Emergencias</a></li>
+   456→                    </ul>
+   457→                </li>
+   458→                <li id="navLoginItem"><a href="/login.html" class="nav-link nav-btn">Login</a></li>
+   459→                <li id="navUserItem" class="nav-user hidden">
+   460→                    <a href="/dashboard.html" class="nav-link" id="navUserName">
+   461→                        <i class="fas fa-user-circle"></i> Mi Cuenta
+   462→                    </a>
+   463→                    <button class="nav-link btn-logout" id="navLogout">
+   464→                        <i class="fas fa-sign-out-alt"></i> Salir
+   465→                    </button>
+   466→                </li>
+   467→                <li class="nav-mobile-cta">
+   468→                    <a href="/marketplace.html" class="nav-mobile-cta-marketplace">
+   469→                        <i class="fas fa-shopping-bag"></i> Marketplace
+   470→                    </a>
+   471→                </li>
+   472→            </ul>
+   473→        </div>
+   474→    </nav>
+   475→
+   476→    <div class="pd-wrap">
+   477→        <div class="pd-breadcrumb">
+   478→            ${breadcrumbHtml}
+   479→        </div>
+   480→
+   481→        <div class="pd-card">
+   482→            <div class="pd-body" style="padding-top:24px;">
+   483→                <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;">
+   484→                    ${product.business_logo ? `<img src="${esc(product.business_logo)}" alt="" style="width:32px;height:32px;border-radius:8px;object-fit:cover;flex-shrink:0;" onerror="this.style.display='none'">` : ''}
+   485→                    <div>
+   486→                        ${bizLink ? `<a href="${bizLink}" class="pd-biz-name" style="margin:0;display:block;"><i class="fas fa-store"></i> ${esc(product.business_name || 'Negocio')}${product.city ? ' · ' + esc(product.city) : ''}</a>` : (product.business_name ? `<div class="pd-biz-name" style="margin:0;display:block;"><i class="fas fa-store"></i> ${esc(product.business_name)}</div>` : '')}
+   487→                        ${product.created_at ? (() => { try { var _ds = String(product.created_at).trim(); if (_ds.includes('T')) {} else if (_ds.includes(' ')) { _ds = _ds.replace(' ', 'T'); } else { _ds = _ds + 'T00:00:00'; } const pd = new Date(_ds); const pds = pd.toLocaleDateString('es-CL', { year:'numeric', month:'long', day:'numeric' }); if (!pds.includes('NaN')) return `<div style="font-size:.8rem;color:#94a3b8;margin-top:2px;"><i class="far fa-clock"></i> Publicado ${pds}</div>`; } catch(e){} return ''; })() : ''}
+   488→                    </div>
+   489→                </div>
+   490→                <h1 class="pd-title">${esc(title)}</h1>
+   491→                ${price ? `<div class="pd-price">${price}</div>` : ''}
+   492→            </div>
+   493→
+   494→            <div class="pd-img" id="pdMainImgWrap" onclick="openLightbox(0)" style="cursor:pointer;">
+   495→                ${mainImage
+   496→                    ? `<img id="pdMainImg" src="${esc(mainImage)}" alt="${esc(title)}" onerror="this.parentElement.innerHTML='<div class=\\'pd-img-ph\\'><i class=\\'fas fa-image\\'></i></div>'">`
+   497→                    : `<div class="pd-img-ph"><i class="fas fa-image"></i></div>`}
+   498→                <span class="pd-cat-badge ${catBadge}"><i class="fas ${catIcon}"></i> ${catLabel}</span>
+   499→            </div>
+   500→            ${productImages.length > 1 ? `
+   501→            <div style="padding:12px 24px 0;display:flex;gap:8px;overflow-x:auto;-webkit-overflow-scrolling:touch;" id="pdThumbs">
+   502→                ${productImages.map((img, i) => `
+   503→                    <div onclick="event.stopPropagation();document.getElementById('pdMainImg').src='${esc(img).replace(/'/g, "\\'")}';document.querySelectorAll('#pdThumbs .pd-thumb').forEach(function(t){t.style.opacity='0.5';t.style.borderColor='#e2e8f0';});this.style.opacity='1';this.style.borderColor='#006EE3';window._pdActiveImg=${i};"
+   504→                         class="pd-thumb" style="flex-shrink:0;width:64px;height:64px;border-radius:10px;overflow:hidden;cursor:pointer;border:2px solid ${i===0?'#006EE3':'#e2e8f0'};opacity:${i===0?'1':'0.5'};transition:all .2s;">
+   505→                        <img src="${esc(img)}" alt="" style="width:100%;height:100%;object-fit:cover;" onerror="this.parentElement.style.display='none'">
+   506→                    </div>
+   507→                `).join('')}
+   508→            </div>` : ''}
+   509→
+   510→            ${(() => {
+   511→                let videoHtml = '';
+   512→                let vids = [];
+   513→                try { const p = JSON.parse(product.video_url); if (Array.isArray(p)) vids = p; } catch(e) {}
+   514→                if (vids.length === 0 && product.video_url) vids = [product.video_url];
+   515→                if (vids.length > 0) {
+   516→                    videoHtml = '<div style="padding:20px 24px 0;">';
+   517→                    vids.forEach(v => { videoHtml += '<div class="pd-video" style="max-width:100%;margin-bottom:12px;">' + getVideoEmbed(v) + '</div>'; });
+   518→                    videoHtml += '</div>';
+   519→                }
+   520→                return videoHtml;
+   521→            })()}
+   522→
+   523→            <div class="pd-body">
+   524→                <p class="pd-desc">${esc(product.description || 'Sin descripcion disponible.')}</p>
+   525→                <div class="pd-meta">
+   526→                    <div class="pd-meta-chip"><i class="fas fa-tag"></i> ${catLabel}</div>
+   527→
+   528→                    ${waNumber ? `<div class="pd-meta-chip"><i class="fab fa-whatsapp"></i> WhatsApp</div>` : ''}
+   529→                </div>
+   530→                <div class="pd-actions">
+   531→                    ${waLink ? `<a href="${waLink}" target="_blank" rel="noopener" class="pd-btn pd-btn-wa"><i class="fab fa-whatsapp"></i> Contactar</a>` : ''}
+   532→                    <button class="pd-btn pd-btn-out" onclick="shareProduct()"><i class="fas fa-share-alt"></i> Compartir</button>
+   533→                </div>
+   534→            </div>
+   535→
+   536→            ${product.business_name ? `
+   537→            <hr class="pd-divider">
+   538→            <div class="pd-biz-section">
+   539→                <div class="pd-biz-section-label"><i class="fas fa-store"></i> Negocio Asociado</div>
+   540→                ${bizLink ? `
+   541→                <a href="${bizLink}" class="pd-biz-card">
+   542→                    ${product.business_logo ? `<img src="${esc(product.business_logo)}" alt="" style="width:50px;height:50px;border-radius:13px;object-fit:cover;flex-shrink:0;" onerror="this.style.display='none'">` : `<div class="pd-biz-icon"><i class="fas fa-store"></i></div>`}
+   543→                    <div class="pd-biz-info">
+   544→                        <div class="pd-biz-name-card">${esc(product.business_name)}</div>
+   545→                        ${product.city ? `<div class="pd-biz-loc"><i class="fas fa-map-marker-alt" style="font-size:0.6rem;"></i> ${esc(product.city)}${product.state ? ', ' + esc(product.state) : ''}</div>` : ''}
+   546→                    </div>
+   547→                    <div class="pd-biz-arrow"><i class="fas fa-chevron-right"></i></div>
+   548→                </a>` : `
+   549→                <div class="pd-biz-card" style="cursor:default;">
+   550→                    ${product.business_logo ? `<img src="${esc(product.business_logo)}" alt="" style="width:50px;height:50px;border-radius:13px;object-fit:cover;flex-shrink:0;" onerror="this.style.display='none'">` : `<div class="pd-biz-icon"><i class="fas fa-store"></i></div>`}
+   551→                    <div class="pd-biz-info">
+   552→                        <div class="pd-biz-name-card">${esc(product.business_name)}</div>
+   553→                        ${product.city ? `<div class="pd-biz-loc"><i class="fas fa-map-marker-alt" style="font-size:0.6rem;"></i> ${esc(product.city)}${product.state ? ', ' + esc(product.state) : ''}</div>` : ''}
+   554→                    </div>
+   555→                </div>`}
+   556→            </div>` : ''}
+   557→
+   558→            ${(() => { const instagram = product.business_instagram; const facebook = product.business_facebook; const twitter = product.business_twitter; const tiktok = product.business_tiktok; const youtube = product.business_youtube; const hasSocial = instagram || facebook || twitter || tiktok || youtube; const hasWeb = product.business_slug; if (!hasSocial && !hasWeb) return ''; return `
+   559→            <hr class="pd-divider">
+   560→            <div class="pd-biz-section">
+   561→                <div class="pd-biz-section-label" style="font-size:1rem;font-weight:700;color:#0f172a;text-transform:none;letter-spacing:0;display:flex;align-items:center;gap:8px;">
+   562→                    <i class="fas fa-share-nodes" style="color:#006EE3;"></i> Redes Sociales y Web
+   563→                </div>
+   564→                <div style="display:flex;gap:15px;flex-wrap:wrap;margin-top:12px;">
+   565→                    ${hasWeb ? `<a href="/web/${esc(product.business_slug)}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:10px;padding:16px 30px;border-radius:18px;background:linear-gradient(135deg,#006EE3,#0ea5e9);color:#fff;text-decoration:none;font-size:1.35rem;font-weight:700;"><i class="fas fa-globe" style="font-size:1.5rem;"></i> Sitio Web</a>` : ''}
+   566→                    ${instagram ? `<a href="${esc(instagram)}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:10px;padding:16px 30px;border-radius:18px;background:linear-gradient(135deg,#833ab4,#fd1d1d,#fcb045);color:#fff;text-decoration:none;font-size:1.35rem;font-weight:700;"><i class="fab fa-instagram" style="font-size:1.5rem;"></i> Instagram</a>` : ''}
+   567→                    ${facebook ? `<a href="${esc(facebook)}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:10px;padding:16px 30px;border-radius:18px;background:#1877f2;color:#fff;text-decoration:none;font-size:1.35rem;font-weight:700;"><i class="fab fa-facebook-f" style="font-size:1.5rem;"></i> Facebook</a>` : ''}
+   568→                    ${twitter ? `<a href="${esc(twitter)}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:10px;padding:16px 30px;border-radius:18px;background:#000;color:#fff;text-decoration:none;font-size:1.35rem;font-weight:700;"><i class="fab fa-x-twitter" style="font-size:1.5rem;"></i> X (Twitter)</a>` : ''}
+   569→                    ${tiktok ? `<a href="${esc(tiktok)}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:10px;padding:16px 30px;border-radius:18px;background:#010101;color:#fff;text-decoration:none;font-size:1.35rem;font-weight:700;"><i class="fab fa-tiktok" style="font-size:1.5rem;"></i> TikTok</a>` : ''}
+   570→                    ${youtube ? `<a href="${esc(youtube)}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:10px;padding:16px 30px;border-radius:18px;background:#ff0000;color:#fff;text-decoration:none;font-size:1.35rem;font-weight:700;"><i class="fab fa-youtube" style="font-size:1.5rem;"></i> YouTube</a>` : ''}
+   571→                </div>
+   572→            </div>`; })()}
+   573→
+   574→            <hr class="pd-divider">
+   575→            <div class="pd-comments" id="pdCommentsSection">
+   576→                <div class="pd-comments-title"><i class="fas fa-comments"></i> Comentarios</div>
+   577→                <div class="pd-comment-form">
+   578→                    <input type="text" class="pd-comment-input" id="pdCommentInput" placeholder="Escribe tu comentario..." maxlength="1000">
+   579→                    <button class="pd-comment-btn" id="pdCommentBtn" onclick="submitProductComment()"><i class="fas fa-paper-plane"></i> Enviar</button>
+   580→                </div>
+   581→                <div class="pd-comments-list" id="pdCommentsList">
+   582→                    <div class="pd-comments-loading"><i class="fas fa-spinner fa-spin"></i> Cargando comentarios...</div>
+   583→                </div>
+   584→            </div>
+   585→        </div>
+   586→
+   587→        ${relatedHtml}
+   588→    </div>
+   589→
+   590→    <script>
+   591→    function shareProduct(){
+   592→        if(navigator.share){navigator.share({title:'${_escTitle}',text:'${_escDesc}',url:location.href}).catch(function(){});}
+   593→        else{window.open('https://wa.me/?text='+encodeURIComponent('${_escTitle} - En En Santiago Marketplace')+'%20'+encodeURIComponent(location.href),'_blank');}
+   594→    }
+   595→    // Navbar dropdown toggle
+   596→    document.querySelectorAll('.nav-dropdown-toggle').forEach(function(btn){
+   597→        btn.addEventListener('click',function(e){
+   598→            e.stopPropagation();
+   599→            var menu=this.nextElementSibling;
+   600→            if(menu) menu.classList.toggle('active');
+   601→            this.classList.toggle('active');
+   602→        });
+   603→    });
+   604→    </script>
+   605→    <script src="/js/app.js"></script>
+   606→    <script>
+   607→    // === PRODUCT COMMENTS ===
+   608→    var pdProductId = ${product.id};
+   609→    var pdCommentInput = document.getElementById('pdCommentInput');
+   610→    var pdCommentBtn = document.getElementById('pdCommentBtn');
+   611→    var pdCommentsList = document.getElementById('pdCommentsList');
+   612→
+   613→    function initCommentSection() {
+   614→        loadProductComments();
+   615→    }
+   616→
+   617→    function loadProductComments() {
+   618→        fetch('/api/product-comments?product_id=' + pdProductId)
+   619→            .then(function(r) { return r.json(); })
+   620→            .then(function(data) {
+   621→                var list = pdCommentsList;
+   622→                list.innerHTML = '';
+   623→                if (!data.comments || data.comments.length === 0) {
+   624→                    list.innerHTML = '<div class="pd-comments-empty"><i class="far fa-comment-dots" style="font-size:1.5rem;opacity:0.4;display:block;margin-bottom:8px;"></i>Sin comentarios aun. Se el primero en opinar!</div>';
+   625→                    return;
+   626→                }
+   627→                data.comments.forEach(function(c) {
+   628→                    var isAnon = !c.user_name || c.user_name === 'Anonimo';
+   629→                    var initial = isAnon ? '?' : c.user_name.charAt(0).toUpperCase();
+   630→                    var displayName = isAnon ? 'Anonimo' : escapeHtml(c.user_name);
+   631→                    var timeAgo = getTimeAgo(c.created_at);
+   632→                    var avatarStyle = isAnon ? 'background:#94a3b8;' : '';
+   633→                    var div = document.createElement('div');
+   634→                    div.className = 'pd-comment-item';
+   635→                    div.innerHTML = '<div class="pd-comment-avatar" style="' + avatarStyle + '">' + initial + '</div>' +
+   636→                        '<div class="pd-comment-body">' +
+   637→                            '<div class="pd-comment-header">' +
+   638→                                '<span class="pd-comment-name">' + displayName + '</span>' +
+   639→                                '<span class="pd-comment-badge">Comentario</span>' +
+   640→                                '<span class="pd-comment-date">' + timeAgo + '</span>' +
+   641→                            '</div>' +
+   642→                            '<div class="pd-comment-text">' + escapeHtml(c.content) + '</div>' +
+   643→                        '</div>';
+   644→                    list.appendChild(div);
+   645→                });
+   646→            })
+   647→            .catch(function() {
+   648→                pdCommentsList.innerHTML = '';
+   649→            });
+   650→    }
+   651→
+   652→    function submitProductComment() {
+   653→        var content = pdCommentInput.value.trim();
+   654→        if (!content) return;
+   655→
+   656→        pdCommentBtn.disabled = true;
+   657→        pdCommentBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+   658→
+   659→        var token = localStorage.getItem('santiago_token') || localStorage.getItem('authToken');
+   660→        var headers = { 'Content-Type': 'application/json' };
+   661→        if (token) headers['Authorization'] = 'Bearer ' + token;
+   662→
+   663→        fetch('/api/product-comments', {
+   664→            method: 'POST',
+   665→            headers: headers,
+   666→            body: JSON.stringify({ product_id: pdProductId, content: content })
+   667→        })
+   668→        .then(function(r) { return r.json(); })
+   669→        .then(function(data) {
+   670→            pdCommentBtn.disabled = false;
+   671→            pdCommentBtn.innerHTML = '<i class="fas fa-paper-plane"></i> Enviar';
+   672→            if (data.comment) {
+   673→                pdCommentInput.value = '';
+   674→                loadProductComments();
+   675→            } else if (data.error) {
+   676→                alert(data.error);
+   677→            }
+   678→        })
+   679→        .catch(function() {
+   680→            pdCommentBtn.disabled = false;
+   681→            pdCommentBtn.innerHTML = '<i class="fas fa-paper-plane"></i> Enviar';
+   682→            alert('Error al enviar comentario');
+   683→        });
+   684→    }
+   685→
+   686→    function getTimeAgo(dateStr) {
+   687→        if (!dateStr) return '';
+   688→        try {
+   689→            var now = new Date();
+   690→            var _ds2 = String(dateStr).trim(); if (_ds2.includes('T') || _ds2.includes('Z') || _ds2.includes('+')) {} else if (_ds2.includes(' ')) { _ds2 = _ds2.replace(' ', 'T'); } else { _ds2 = _ds2 + 'T00:00:00'; } var d = new Date(_ds2);
+   691→            if (isNaN(d.getTime())) return dateStr;
+   692→            var diff = Math.floor((now - d) / 1000);
+   693→            if (diff < 60) return 'Ahora mismo';
+   694→            if (diff < 3600) return Math.floor(diff/60) + ' min';
+   695→            if (diff < 86400) return Math.floor(diff/3600) + 'h';
+   696→            if (diff < 604800) return Math.floor(diff/86400) + 'd';
+   697→            return d.getDate() + '/' + (d.getMonth()+1) + '/' + d.getFullYear();
+   698→        } catch(e) { return dateStr; }
+   699→    }
+   700→
+   701→    function escapeHtml(s) {
+   702→        if (!s) return '';
+   703→        return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+   704→    }
+   705→
+   706→    // Enter key to submit
+   707→    if (pdCommentInput) {
+   708→        pdCommentInput.addEventListener('keydown', function(e) {
+   709→            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitProductComment(); }
+   710→        });
+   711→    }
+   712→
+   713→    initCommentSection();
+   714→    </script>
+   715→    <script>setTimeout(function(){fetch('/api/business-stats/track',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({business_id:${product.business_id},event_type:'view',source:'product'})}).catch(function(){})},0);</script>
+   716→
+   717→    <!-- Lightbox -->
+   718→    <div class="pd-lightbox" id="pdLightbox">
+   719→        <button class="pd-lightbox-close" onclick="closeLightbox()">&times;</button>
+   720→        <button class="pd-lightbox-nav pd-lightbox-prev" onclick="event.stopPropagation();navLightbox(-1)"><i class="fas fa-chevron-left"></i></button>
+   721→        <img id="pdLightboxImg" src="" alt="">
+   722→        <button class="pd-lightbox-nav pd-lightbox-next" onclick="event.stopPropagation();navLightbox(1)"><i class="fas fa-chevron-right"></i></button>
+   723→        <div class="pd-lightbox-counter" id="pdLightboxCounter"></div>
+   724→    </div>
+   725→
+   726→    <footer class="footer">
+   727→        <div class="container">
+   728→            <div class="footer-bottom">
+   729→                <p>&copy; ${new Date().getFullYear()} En Santiago. Todos los derechos reservados.</p>
+   730→                <p><a href="https://maps.app.goo.gl/Jz2QTADrNNneQtGd9" target="_blank" rel="noopener noreferrer">Página web desarrollada por Grupo 360 Soluciones</a></p>
+   731→                <p><a href="http://coporo.pages.dev/" target="_blank" rel="noopener noreferrer">Diseño de páginas webs - SEO Local -</a></p>
+   732→            </div>
+   733→        </div>
+   734→    </footer>
+   735→
+   736→    <script>
+   737→    var _pdImages = ${JSON.stringify(productImages)};
+   738→    var _pdActiveImg = 0;
+   739→
+   740→    function openLightbox(idx) {
+   741→        if (_pdImages.length === 0) return;
+   742→        _pdActiveImg = idx || 0;
+   743→        updateLightbox();
+   744→        document.getElementById('pdLightbox').classList.add('active');
+   745→        document.body.style.overflow = 'hidden';
+   746→    }
+   747→    function closeLightbox() {
+   748→        document.getElementById('pdLightbox').classList.remove('active');
+   749→        document.body.style.overflow = '';
+   750→    }
+   751→    function navLightbox(dir) {
+   752→        _pdActiveImg = (_pdActiveImg + dir + _pdImages.length) % _pdImages.length;
+   753→        updateLightbox();
+   754→    }
+   755→    function updateLightbox() {
+   756→        var lb = document.getElementById('pdLightbox');
+   757→        var img = document.getElementById('pdLightboxImg');
+   758→        var ctr = document.getElementById('pdLightboxCounter');
+   759→        if (_pdImages[_pdActiveImg]) {
+   760→            img.src = _pdImages[_pdActiveImg];
+   761→            img.style.display = '';
+   762→        } else {
+   763→            img.style.display = 'none';
+   764→        }
+   765→        ctr.textContent = (_pdActiveImg + 1) + ' / ' + _pdImages.length;
+   766→        lb.querySelector('.pd-lightbox-prev').style.display = _pdImages.length > 1 ? '' : 'none';
+   767→        lb.querySelector('.pd-lightbox-next').style.display = _pdImages.length > 1 ? '' : 'none';
+   768→    }
+   769→    document.getElementById('pdLightbox').addEventListener('click', function(e) {
+   770→        if (e.target === this) closeLightbox();
+   771→    });
+   772→    document.addEventListener('keydown', function(e) {
+   773→        if (!document.getElementById('pdLightbox').classList.contains('active')) return;
+   774→        if (e.key === 'Escape') closeLightbox();
+   775→        if (e.key === 'ArrowLeft') navLightbox(-1);
+   776→        if (e.key === 'ArrowRight') navLightbox(1);
+   777→    });
+   778→    </script>
+   779→</body>
+   780→</html>`;
+   781→
+   782→    return new Response(html, {
+   783→      status: 200,
+   784→      headers: {
+   785→        'Content-Type': 'text/html; charset=utf-8',
+   786→        'Cache-Control': 'no-cache, no-store, must-revalidate',
+   787→        'Link': `<${canonicalUrl}>; rel="canonical"`,
+   788→      },
+   789→    });
+   790→}
+   791→

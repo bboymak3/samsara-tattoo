@@ -1,0 +1,819 @@
+     1→// functions/_lib/render-business.js
+     2→// Shared business page renderer — used by /negocio/[slug] and other section routes
+     3→
+     4→/**
+     5→ * Escape a string for safe HTML attribute / text interpolation.
+     6→ */
+     7→export function escapeHtml(str) {
+     8→  if (!str) return '';
+     9→  return str
+    10→    .replace(/&/g, '&amp;')
+    11→    .replace(/</g, '&lt;')
+    12→    .replace(/>/g, '&gt;')
+    13→    .replace(/"/g, '&quot;')
+    14→    .replace(/'/g, '&#39;');
+    15→}
+    16→
+    17→/**
+    18→ * Escape a string for safe JS single-quoted string interpolation.
+    19→ */
+    20→export function escapeJs(str) {
+    21→  if (!str) return '';
+    22→  return str.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '');
+    23→}
+    24→
+    25→/**
+    26→ * Normalize a social-media handle or partial URL into a full URL.
+    27→ */
+    28→export function normalizeSocialUrl(value, platform) {
+    29→  if (!value) return '';
+    30→  const v = value.trim();
+    31→  if (v.startsWith('http://') || v.startsWith('https://')) return v;
+    32→  let clean = v.replace(/^@/, '');
+    33→  clean = clean.replace(/^(facebook\.com\/?|www\.facebook\.com\/?|facebook\/)/i, '');
+    34→  clean = clean.replace(/^(instagram\.com\/?|www\.instagram\.com\/?|instagram\/)/i, '');
+    35→  clean = clean.replace(/^(x\.com\/?|twitter\.com\/?|www\.twitter\.com\/?|twitter\/)/i, '');
+    36→  clean = clean.replace(/^(tiktok\.com\/?|www\.tiktok\.com\/?|tiktok\/)/i, '');
+    37→  clean = clean.replace(/^(youtube\.com\/?|www\.youtube\.com\/?|youtube\/)/i, '');
+    38→  clean = clean.replace(/^@/, '');
+    39→  switch (platform) {
+    40→    case 'instagram': return `https://www.instagram.com/${clean}`;
+    41→    case 'facebook': return `https://www.facebook.com/${clean}`;
+    42→    case 'twitter': return `https://x.com/${clean}`;
+    43→    case 'tiktok': return `https://www.tiktok.com/@${clean}`;
+    44→    case 'youtube': return `https://www.youtube.com/@${clean}`;
+    45→    default: return v;
+    46→  }
+    47→}
+    48→
+    49→/**
+    50→ * Return an <iframe> or <video> embed string for a given video URL.
+    51→ */
+    52→export function getVideoEmbed(url) {
+    53→  if (!url) return '';
+    54→  // YouTube: youtube.com/watch?v=XXX or youtu.be/XXX
+    55→  const ytMatch = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]+)/);
+    56→  if (ytMatch) return `<iframe src="https://www.youtube.com/embed/${ytMatch[1]}" width="100%" style="aspect-ratio:9/16;" frameborder="0" allowfullscreen></iframe>`;
+    57→  // YouTube Shorts: youtube.com/shorts/XXX
+    58→  const ytShortsMatch = url.match(/youtube\.com\/shorts\/([a-zA-Z0-9_-]+)/);
+    59→  if (ytShortsMatch) return `<iframe src="https://www.youtube.com/embed/${ytShortsMatch[1]}" width="100%" style="aspect-ratio:9/16;" frameborder="0" allowfullscreen></iframe>`;
+    60→  // TikTok: tiktok.com/@user/video/XXX
+    61→  const ttMatch = url.match(/tiktok\.com\/@[^/]+\/video\/(\d+)/);
+    62→  if (ttMatch) return `<iframe src="https://www.tiktok.com/embed/v2/${ttMatch[1]}" width="100%" style="aspect-ratio:9/16;" frameborder="0" allowfullscreen></iframe>`;
+    63→  // Direct video files (R2 uploads): .mp4, .webm, .ogg, .mov
+    64→  if (/\.(mp4|webm|ogg|mov)(\?|$)/i.test(url)) {
+    65→    return `<video src="${escapeHtml(url)}" controls playsinline preload="metadata" style="width:100%;border-radius:12px;background:#000;"></video>`;
+    66→  }
+    67→  // Other URLs: use as-is iframe
+    68→  return `<iframe src="${escapeHtml(url)}" width="100%" style="aspect-ratio:9/16;" frameborder="0" allowfullscreen></iframe>`;
+    69→}
+    70→
+    71→/**
+    72→ * Render the full business detail page HTML and return a Response.
+    73→ *
+    74→ * @param {object}  env           – Cloudflare env (kept for API consistency / future use)
+    75→ * @param {object}  business      – Row from the businesses table
+    76→ * @param {object}  options
+    77→ * @param {string}  [options.pathPrefix]       – e.g. '/servicio/medicina-servicio-medico'
+    78→ * @param {string}  [options.canonicalUrl]      – Full canonical URL (overrides pathPrefix-based)
+    79→ * @param {string}  [options.sectionLabel]      – Breadcrumb label for the section
+    80→ * @param {{name:string,url:string}} [options.categoryBreadcrumb] – Override category breadcrumb
+    81→ * @param {{name:string,url:string}} [options.tipoBreadcrumb] – Breadcrumb for business type
+    82→ * @param {string}  [options.tipoLabel]         – Display label for business type
+    83→ * @returns {Response}
+    84→ */
+    85→export function renderBusinessPage(env, business, options = {}) {
+    86→  const {
+    87→    pathPrefix = null,
+    88→    canonicalUrl = null,
+    89→    categoryBreadcrumb = null,
+    90→    sectionLabel = null,
+    91→    tipoBreadcrumb = null,
+    92→    tipoLabel = null,
+    93→    reviews = [],
+    94→    avgRating = 0,
+    95→    reviewCount = 0,
+    96→  } = options;
+    97→
+    98→  const baseUrl = 'https://en-santiago.pages.dev';
+    99→  const title = business.title || 'Negocio';
+   100→  // Use custom SEO description if provided, otherwise auto-generate
+   101→  const description = business.seo_description
+   102→    ? business.seo_description.substring(0, 160)
+   103→    : business.description
+   104→      ? business.description.substring(0, 160)
+   105→      : `Información sobre ${title} en ${business.city || 'Santiago de Chile'}. Dirección, contacto, servicios y más.`;
+   106→  const imageUrl = business.cover_image || `${baseUrl}/images/En Santiago.png`;
+   107→  const finalCanonical = canonicalUrl || `${baseUrl}${pathPrefix || '/negocio'}/${business.slug}`;
+   108→
+   109→  // Breadcrumb helpers
+   110→  const sectionBreadcrumbText = sectionLabel || 'Negocios';
+   111→  const categoryLinkHtml = categoryBreadcrumb
+   112→    ? `<a href="${escapeHtml(categoryBreadcrumb.url)}">${escapeHtml(categoryBreadcrumb.name)}</a>`
+   113→    : (business.category_name
+   114→        ? `<a href="/categoria/${encodeURIComponent((business.category_name || '').toLowerCase().replace(/[^a-z0-9áéíóúñü]+/g, '-').replace(/^-|-$/g, ''))}">${escapeHtml(business.category_name)}</a>`
+   115→        : '');
+   116→
+   117→  const html = `<!DOCTYPE html>
+   118→<html lang="es">
+   119→<head>
+   120→<!-- Google Tag Manager -->
+   121→<script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+   122→new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+   123→j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+   124→'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+   125→})(window,document,'script','dataLayer','GTM-TMH9V9QQ');</script>
+   126→<!-- End Google Tag Manager -->
+   127→<!-- Google tag (gtag.js) -->
+   128→<script async src="https://www.googletagmanager.com/gtag/js?id=G-RYF2N8ZD15"></script>
+   129→<script>
+   130→  window.dataLayer = window.dataLayer || [];
+   131→  function gtag(){dataLayer.push(arguments);}
+   132→  gtag('js', new Date());
+   133→
+   134→  gtag('config', 'G-RYF2N8ZD15');
+   135→</script>
+   136→    <meta charset="UTF-8">
+   137→    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+   138→    <meta name="description" content="${escapeHtml(description)}">
+   139→    <title>${escapeHtml(title)} - En Santiago | Directorio de Negocios en Santiago de Chile</title>
+   140→    <meta name="robots" content="index, follow">
+   141→    <link rel="canonical" href="${finalCanonical}">
+   142→
+   143→    <!-- Open Graph -->
+   144→    <meta property="og:type" content="business.business">
+   145→    <meta property="og:title" content="${escapeHtml(title)} - En Santiago">
+   146→    <meta property="og:description" content="${escapeHtml(description)}">
+   147→    <meta property="og:image" content="${imageUrl}">
+   148→    <meta property="og:url" content="${finalCanonical}">
+   149→    <meta property="og:site_name" content="En Santiago">
+   150→    <meta property="og:locale" content="es_CL">
+   151→
+   152→    <!-- Twitter Card -->
+   153→    <meta name="twitter:card" content="summary_large_image">
+   154→    <meta name="twitter:title" content="${escapeHtml(title)} - En Santiago">
+   155→    <meta name="twitter:description" content="${escapeHtml(description)}">
+   156→    <meta name="twitter:image" content="${imageUrl}">
+   157→
+   158→    <!-- Location -->
+   159→    <meta property="business:contact_data:street_address" content="${escapeHtml(business.address || '')}">
+   160→    <meta property="business:contact_data:locality" content="${escapeHtml(business.city || '')}">
+   161→    <meta property="business:contact_data:region" content="${escapeHtml(business.state || '')}">
+   162→    <meta property="business:contact_data:country_name" content="${escapeHtml(business.country || 'Santiago de Chile')}">
+   163→
+   164→    <!-- JSON-LD: Rich Snippets -->
+   165→    ${business.custom_jsonld
+   166→      ? '<script type="application/ld+json">' + business.custom_jsonld + '</script>'
+   167→      : '<script type="application/ld+json">' + JSON.stringify((() => {
+   168→      const isMedical = business.category_name && (business.category_name.toLowerCase().includes('médic') || business.category_name.toLowerCase().includes('medic'));
+   169→      const ld = {
+   170→        "@context": "https://schema.org",
+   171→        "@type": isMedical ? "MedicalBusiness" : "LocalBusiness",
+   172→        "name": title,
+   173→        "url": finalCanonical,
+   174→        "image": imageUrl,
+   175→        "description": description
+   176→      };
+   177→      if (business.category_name) ld.category = business.category_name;
+   178→      if (business.especialidad) ld.medicalSpecialty = business.especialidad;
+   179→      const phoneClean = (business.phone || '').replace(/[^0-9]/g, '');
+   180→      const waClean = (business.whatsapp || business.phone || '').replace(/[^0-9]/g, '');
+   181→      if (waClean) ld.telephone = '+' + waClean;
+   182→      if (business.address) {
+   183→        ld.address = {
+   184→          "@type": "PostalAddress",
+   185→          "streetAddress": business.address,
+   186→          "addressLocality": business.city || undefined,
+   187→          "addressRegion": business.state || undefined,
+   188→          "addressCountry": "CL"
+   189→        };
+   190→      }
+   191→      if (business.lat || business.latitude) {
+   192→        ld.geo = {
+   193→          "@type": "GeoCoordinates",
+   194→          "latitude": Number(business.lat || business.latitude),
+   195→          "longitude": Number(business.lng || business.longitude)
+   196→        };
+   197→      }
+   198→      if (business.logo) ld.logo = business.logo;
+   199→      const sameAs = [];
+   200→      if (business.instagram) sameAs.push(normalizeSocialUrl(business.instagram, 'instagram'));
+   201→      if (business.facebook) sameAs.push(normalizeSocialUrl(business.facebook, 'facebook'));
+   202→      if (business.twitter) sameAs.push(normalizeSocialUrl(business.twitter, 'twitter'));
+   203→      if (business.tiktok) sameAs.push(normalizeSocialUrl(business.tiktok, 'tiktok'));
+   204→      if (business.youtube) sameAs.push(normalizeSocialUrl(business.youtube, 'youtube'));
+   205→      if (business.website) sameAs.push(business.website);
+   206→      if (sameAs.length) ld.sameAs = sameAs;
+   207→      if (business.schedule) ld.openingHours = business.schedule;
+   208→      // AggregateRating + Reviews for rich snippets
+   209→      if (reviewCount > 0) {
+   210→        ld.aggregateRating = {
+   211→          "@type": "AggregateRating",
+   212→          "ratingValue": Math.round(avgRating * 10) / 10,
+   213→          "bestRating": 5,
+   214→          "worstRating": 1,
+   215→          "reviewCount": reviewCount
+   216→        };
+   217→        const reviewItems = reviews.filter(r => r.comment).slice(0, 5).map(r => ({
+   218→          "@type": "Review",
+   219→          "author": { "@type": "Person", "name": r.name || 'Anónimo' },
+   220→          "reviewRating": { "@type": "Rating", "ratingValue": r.rating, "bestRating": 5 },
+   221→          "reviewBody": r.comment
+   222→        }));
+   223→        if (reviewItems.length > 0) ld.review = reviewItems;
+   224→      }
+   225→      return ld;
+   226→    })()) + '</script>'
+   227→    }
+   228→    <script type="application/ld+json">${(() => {
+   229→      const crumbs = [
+   230→        { "@type": "ListItem", "position": 1, "name": "Inicio", "item": "https://en-santiago.pages.dev/" },
+   231→        { "@type": "ListItem", "position": 2, "name": sectionBreadcrumbText, "item": "https://en-santiago.pages.dev/search.html" }
+   232→      ];
+   233→      if (categoryBreadcrumb) {
+   234→        crumbs.push({ "@type": "ListItem", "position": 3, "name": categoryBreadcrumb.name, "item": categoryBreadcrumb.url.startsWith('http') ? categoryBreadcrumb.url : "https://en-santiago.pages.dev" + categoryBreadcrumb.url });
+   235→      } else if (business.category_name) {
+   236→        const catSlug = (business.category_name || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+   237→        crumbs.push({ "@type": "ListItem", "position": 3, "name": business.category_name, "item": "https://en-santiago.pages.dev/categoria/" + catSlug });
+   238→      }
+   239→      crumbs.push({ "@type": "ListItem", "position": crumbs.length + 1, "name": title, "item": finalCanonical });
+   240→      return JSON.stringify({ "@context": "https://schema.org", "@type": "BreadcrumbList", "itemListElement": crumbs });
+   241→    })()}</script>
+   242→
+   243→    <link rel="stylesheet" href="/css/styles.css?v=4">
+   244→    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+   245→    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+   246→    <link rel="manifest" href="/manifest.json">
+   247→    <link rel="icon" type="image/jpeg" href="/images/favicon.jpeg">
+   248→    <style>
+   249→/* === Business Ficha - 30% Larger === */
+   250→.business-detail-page .compact-info-card {
+   251→    padding: 22px;
+   252→}
+   253→.business-detail-page .compact-title {
+   254→    font-size: 1.95rem;
+   255→    line-height: 1.35;
+   256→}
+   257→.business-detail-page .compact-address {
+   258→    font-size: 1.14rem;
+   259→    margin-bottom: 12px;
+   260→}
+   261→.business-detail-page .compact-address i {
+   262→    font-size: 1rem;
+   263→}
+   264→.business-detail-page .feature-chips {
+   265→    gap: 10px;
+   266→    margin-bottom: 14px;
+   267→}
+   268→.business-detail-page .feature-chip {
+   269→    padding: 8px 15px;
+   270→    font-size: 0.95rem;
+   271→    gap: 7px;
+   272→}
+   273→.business-detail-page .feature-chip i {
+   274→    font-size: 1rem;
+   275→}
+   276→.business-detail-page .compact-description {
+   277→    font-size: 1.05rem;
+   278→    line-height: 1.75;
+   279→}
+   280→.business-detail-page .compact-description.collapsed {
+   281→    max-height: 104px;
+   282→}
+   283→.business-detail-page .compact-description.collapsed::after {
+   284→    height: 52px;
+   285→}
+   286→.business-detail-page .compact-top-row {
+   287→    margin-bottom: 8px;
+   288→}
+   289→.business-detail-page .btn-favorite {
+   290→    width: 40px;
+   291→    height: 40px;
+   292→    font-size: 1.15rem;
+   293→}
+   294→.business-detail-page .compact-price {
+   295→    font-size: 2.4rem;
+   296→}
+   297→.business-detail-page .description-toggle {
+   298→    font-size: 1rem;
+   299→}
+   300→.business-detail-page .business-section-title {
+   301→    font-size: 1.3rem;
+   302→}
+   303→
+   304→/* Top spacing for ficha */
+   305→.business-detail-page .business-content {
+   306→    padding-top: 10px;
+   307→}
+   308→
+   309→/* === Compact Business Cards (for similar businesses) === */
+   310→/* Hide action buttons in similar section */
+   311→.business-detail-page #similarGrid .business-card-fav,
+   312→.business-detail-page #similarGrid .btn-share-wa-card {
+   313→    display: none !important;
+   314→}
+   315→.business-detail-page .business-grid {
+   316→    display: grid;
+   317→    grid-template-columns: repeat(4, 1fr);
+   318→    gap: 10px;
+   319→}
+   320→.business-detail-page .business-card {
+   321→    background: #fff;
+   322→    border-radius: 12px;
+   323→    overflow: hidden;
+   324→    border: 1px solid #e5e7eb;
+   325→    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+   326→    transition: transform 0.2s, box-shadow 0.2s;
+   327→}
+   328→.business-detail-page .business-card:hover {
+   329→    transform: translateY(-2px);
+   330→    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+   331→}
+   332→.business-detail-page .business-card-image {
+   333→    height: 110px;
+   334→    overflow: hidden;
+   335→    position: relative;
+   336→    background: #f3f4f6;
+   337→}
+   338→.business-detail-page .business-card-image img {
+   339→    width: 100%;
+   340→    height: 100%;
+   341→    object-fit: cover;
+   342→}
+   343→.business-detail-page .business-card-badges {
+   344→    position: absolute;
+   345→    top: 5px;
+   346→    left: 5px;
+   347→    display: flex;
+   348→    gap: 3px;
+   349→    z-index: 2;
+   350→}
+   351→.business-detail-page .business-card-badges .card-badge {
+   352→    font-size: 0.52rem;
+   353→    padding: 2px 6px;
+   354→    border-radius: 5px;
+   355→    font-weight: 600;
+   356→}
+   357→.business-detail-page .business-card-body {
+   358→    padding: 8px 8px 10px;
+   359→    text-align: center;
+   360→}
+   361→.business-detail-page .business-card-title {
+   362→    font-size: 0.72rem;
+   363→    font-weight: 700;
+   364→    color: #1e293b;
+   365→    margin: 0 0 3px;
+   366→    line-height: 1.25;
+   367→    white-space: nowrap;
+   368→    overflow: hidden;
+   369→    text-overflow: ellipsis;
+   370→}
+   371→.business-detail-page .business-card-location {
+   372→    font-size: 0.6rem;
+   373→    color: #94a3b8;
+   374→    margin: 0 auto 2px;
+   375→    display: inline-flex;
+   376→    align-items: center;
+   377→    gap: 3px;
+   378→}
+   379→.business-detail-page .business-card-location i { font-size: 0.52rem; }
+   380→.business-detail-page .business-card-desc {
+   381→    font-size: 0.6rem;
+   382→    color: #b0b8c4;
+   383→    line-height: 1.35;
+   384→    margin: 0;
+   385→    display: -webkit-box;
+   386→    -webkit-line-clamp: 1;
+   387→    -webkit-box-orient: vertical;
+   388→    overflow: hidden;
+   389→    text-align: center;
+   390→}
+   391→.business-detail-page .business-card-link {
+   392→    text-decoration: none;
+   393→    color: inherit;
+   394→    display: block;
+   395→}
+   396→
+   397→/* === Compact Product Cards (for business products) === */
+   398→.products-grid {
+   399→    display: grid;
+   400→    grid-template-columns: repeat(3, 1fr);
+   401→    gap: 10px;
+   402→}
+   403→.product-card {
+   404→    background: #fff;
+   405→    border-radius: 10px;
+   406→    overflow: hidden;
+   407→    border: 1px solid #e5e7eb;
+   408→    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+   409→    transition: transform 0.2s, box-shadow 0.2s;
+   410→    text-decoration: none;
+   411→    color: inherit;
+   412→}
+   413→.product-card:hover {
+   414→    transform: translateY(-2px);
+   415→    box-shadow: 0 3px 10px rgba(0,0,0,0.1);
+   416→    border-color: #006EE3;
+   417→}
+   418→.product-card img {
+   419→    width: 100%;
+   420→    height: 120px;
+   421→    object-fit: cover;
+   422→}
+   423→.product-card-body {
+   424→    padding: 8px 10px 10px;
+   425→}
+   426→.product-card-name {
+   427→    font-weight: 600;
+   428→    font-size: 0.75rem;
+   429→    margin-bottom: 3px;
+   430→    white-space: nowrap;
+   431→    overflow: hidden;
+   432→    text-overflow: ellipsis;
+   433→    color: #1e293b;
+   434→}
+   435→.product-card-price {
+   436→    color: #006EE3;
+   437→    font-weight: 700;
+   438→    font-size: 0.82rem;
+   439→}
+   440→
+   441→/* Section styling */
+   442→.business-detail-page .section {
+   443→    margin-top: 24px;
+   444→}
+   445→.business-detail-page .section-header {
+   446→    display: flex;
+   447→    justify-content: space-between;
+   448→    align-items: center;
+   449→    margin-bottom: 14px;
+   450→}
+   451→.business-detail-page .section-title {
+   452→    font-size: 1rem;
+   453→    font-weight: 700;
+   454→    color: #0f172a;
+   455→}
+   456→
+   457→/* Compact gallery */
+   458→.business-detail-page .gallery-main {
+   459→    aspect-ratio: 16/9;
+   460→    max-height: 300px;
+   461→}
+   462→
+   463→@media (max-width: 640px) {
+   464→    .business-detail-page .business-grid {
+   465→        grid-template-columns: repeat(2, 1fr);
+   466→        gap: 8px;
+   467→    }
+   468→    .business-detail-page .business-card-image {
+   469→        height: 85px;
+   470→    }
+   471→    .business-detail-page .business-card-body {
+   472→        padding: 6px 5px 8px;
+   473→    }
+   474→    .products-grid {
+   475→        grid-template-columns: repeat(2, 1fr);
+   476→        gap: 8px;
+   477→    }
+   478→    .product-card img {
+   479→        height: 100px;
+   480→    }
+   481→}
+   482→.jobs-list .job-item {
+   483→    background: #fff;
+   484→    border: 1px solid #e5e7eb;
+   485→    border-radius: 10px;
+   486→    padding: 16px;
+   487→    margin-bottom: 12px;
+   488→    display: flex;
+   489→    align-items: center;
+   490→    gap: 14px;
+   491→}
+   492→.job-item-icon {
+   493→    width: 44px;
+   494→    height: 44px;
+   495→    border-radius: 10px;
+   496→    background: #eff6ff;
+   497→    color: #1a73e8;
+   498→    display: flex;
+   499→    align-items: center;
+   500→    justify-content: center;
+   501→    font-size: 1.1rem;
+   502→    flex-shrink: 0;
+   503→}
+   504→.job-item-info {
+   505→    flex: 1;
+   506→    min-width: 0;
+   507→}
+   508→.job-item-title {
+   509→    font-weight: 600;
+   510→    font-size: 0.95rem;
+   511→    margin-bottom: 2px;
+   512→}
+   513→.job-item-meta {
+   514→    font-size: 0.8rem;
+   515→    color: #6b7280;
+   516→}
+   517→.services-list .service-item {
+   518→    background: #fff;
+   519→    border: 1px solid #e5e7eb;
+   520→    border-radius: 10px;
+   521→    padding: 16px 20px;
+   522→    margin-bottom: 12px;
+   523→    border-left: 4px solid #f59e0b;
+   524→}
+   525→.service-item h3 {
+   526→    font-size: 1rem;
+   527→    font-weight: 600;
+   528→    margin-bottom: 6px;
+   529→    color: #1f2937;
+   530→}
+   531→.service-item p {
+   532→    font-size: 0.88rem;
+   533→    color: #6b7280;
+   534→    line-height: 1.5;
+   535→    margin: 0;
+   536→}
+   537→.section-link {
+   538→    font-size: 0.85rem;
+   539→    color: #1a73e8;
+   540→    text-decoration: none;
+   541→    font-weight: 600;
+   542→}
+   543→.section-link:hover {
+   544→    text-decoration: underline;
+   545→}
+   546→</style>
+   547→</head>
+   548→<body>
+   549→<!-- Google Tag Manager (noscript) -->
+   550→<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-TMH9V9QQ"
+   551→height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+   552→<!-- End Google Tag Manager (noscript) -->
+   553→    <!-- Navigation -->
+   554→    <nav class="navbar" id="navbar">
+   555→        <div class="nav-container">
+   556→            <a href="/index.html" class="nav-logo">
+   557→                <img src="/images/favicon.jpeg" alt="En Santiago" style="height:32px;width:auto;border-radius:6px;margin-right:4px;">
+   558→                <span class="brand-name"><span id="brandCity"></span> En Santiago</span>
+   559→            </a>
+   560→            <div class="location-selector" id="locationSelector">
+   561→                <button class="location-btn" id="locationBtn" aria-label="Seleccionar ubicación">
+   562→                    <i class="fas fa-map-marker-alt"></i>
+   563→                    <span class="location-label" id="locationLabel">Todo Santiago de Chile</span>
+   564→                    <i class="fas fa-chevron-down"></i>
+   565→                </button>
+   566→                <div class="location-dropdown hidden" id="locationDropdown">
+   567→                    <div class="location-search">
+   568→                        <input type="text" id="locationSearchInput" placeholder="Buscar comuna..." autocomplete="off">
+   569→                    </div>
+   570→                    <div class="location-option" data-state="" data-city="">
+   571→                        <i class="fas fa-globe-americas"></i>
+   572→                        <span>Todo Santiago de Chile</span>
+   573→                    </div>
+   574→                    <div class="location-divider"></div>
+   575→                    <div class="location-list" id="locationList"></div>
+   576→                </div>
+   577→            </div>
+   578→            <button class="nav-toggle" id="navToggle" aria-label="Abrir menú">
+   579→                <i class="fas fa-bars"></i>
+   580→            </button>
+   581→            <ul class="nav-menu" id="navMenu">
+   582→                <li><a href="/index.html" class="nav-link">Inicio</a></li>
+   583→                <li><a href="/search.html" class="nav-link">Negocios</a></li>
+   584→                <li><a href="/map.html" class="nav-link">Mapa</a></li>
+   585→                <li><a href="/entretenimiento.html" class="nav-link">Entretenimiento</a></li>
+   586→                <li><a href="/empleo.html" class="nav-link">Empleo</a></li>
+   587→                <li class="nav-dropdown">
+   588→                    <button class="nav-dropdown-toggle" aria-label="Más opciones">Más <i class="fas fa-chevron-down"></i></button>
+   589→                    <ul class="nav-dropdown-menu">
+   590→                        <li><a href="/marketplace.html" class="nav-link"><i class="fas fa-shopping-bag"></i> Marketplace</a></li>
+   591→                        <li class="nav-dropdown-divider"></li>
+   592→                        <li><a href="/emergencia.html" class="nav-link" style="color:#dc3545;"><i class="fas fa-exclamation-triangle"></i> Emergencias</a></li>
+   593→                    </ul>
+   594→                </li>
+   595→                <li id="navLoginItem"><a href="/login.html" class="nav-link nav-btn">Login</a></li>
+   596→                <li id="navUserItem" class="nav-user hidden">
+   597→                    <a href="/dashboard.html" class="nav-link" id="navUserName"><i class="fas fa-user-circle"></i> Mi Cuenta</a>
+   598→                    <button class="nav-link btn-logout" id="navLogout"><i class="fas fa-sign-out-alt"></i> Salir</button>
+   599→                </li>
+   600→                <li class="nav-mobile-cta">
+   601→                    <a href="/marketplace.html" class="nav-mobile-cta-marketplace"><i class="fas fa-shopping-bag"></i> Marketplace</a>
+   602→                </li>
+   603→            </ul>
+   604→        </div>
+   605→    </nav>
+   606→
+   607→    <!-- Business Detail -->
+   608→    <main class="business-detail-page">
+   609→        <div class="container">
+   610→            <nav class="breadcrumb" aria-label="Breadcrumb">
+   611→                <a href="/index.html"><i class="fas fa-home"></i> Inicio</a>
+   612→                <a href="/search.html">${escapeHtml(sectionBreadcrumbText)}</a>
+   613→                ${categoryLinkHtml}
+   614→                <span id="breadcrumbTitle">${escapeHtml(title)}</span>
+   615→            </nav>
+   616→
+   617→            <div class="loading-spinner" id="businessLoading">
+   618→                <i class="fas fa-spinner fa-spin fa-3x"></i>
+   619→                <p>Cargando negocio...</p>
+   620→            </div>
+   621→
+   622→            <div class="error-state hidden" id="businessError">
+   623→                <i class="fas fa-exclamation-circle fa-3x"></i>
+   624→                <h2>Negocio no encontrado</h2>
+   625→                <p>El negocio que buscas no existe o ha sido eliminado.</p>
+   626→                <a href="/search.html" class="btn btn-primary">Explorar Negocios</a>
+   627→            </div>
+   628→
+   629→            <div class="business-content hidden" id="businessContent">
+   630→                <!-- Banner de Portada (tipo Facebook) -->
+   631→                <div id="businessBannerWrap" style="display:none;margin:-22px -22px 0;border-radius:16px 16px 0 0;overflow:hidden;position:relative;max-height:420px;min-height:220px;background:linear-gradient(135deg,#1e3a5f,#2563eb,#7c3aed);">
+   632→                    <img id="businessBanner" src="" alt="Portada" style="width:100%;height:100%;object-fit:cover;display:block;">
+   633→                </div>
+   634→
+   635→                <!-- Logo (se superpone sobre el banner si existe) -->
+   636→                <div id="businessLogoWrap" style="display:none;text-align:center;padding:24px 0 8px;${business.banner ? 'margin-top:-60px;position:relative;z-index:2;' : 'margin-bottom:24px;'}">
+   637→                    <img id="businessLogo" src="" alt="Logo" style="max-height:200px;max-width:420px;object-fit:contain;border-radius:12px;box-shadow:0 2px 16px rgba(0,0,0,0.10);${business.banner ? 'border:4px solid #fff;' : ''}">
+   638→                </div>
+   639→
+   640→                <div class="compact-info-card">
+   641→                    <div class="compact-top-row">
+   642→                        <div class="compact-price-row"><span id="propDetailBadges"></span></div>
+   643→                        <button class="btn-favorite" id="btnFavorite" aria-label="Agregar a favoritos" data-business-id=""><i class="far fa-heart"></i></button>
+   644→                    </div>
+   645→                    <h1 class="compact-title" id="propDetailTitle">${escapeHtml(title)}</h1>
+   646→                    <div class="compact-price" id="propDetailPrice" style="display:none;">--</div>
+   647→                    <div class="compact-address" id="propDetailLocation">
+   648→                        <i class="fas fa-map-marker-alt"></i> <span>${escapeHtml(business.city || '')}${business.state ? ', ' + escapeHtml(business.state) : ''}</span>
+   649→                    </div>
+   650→                    <div class="feature-chips">
+   651→                        <div class="feature-chip" id="statStateCityWrap" title="Comuna / Ciudad"><i class="fas fa-map-marker-alt"></i> <span id="statStateCity">${escapeHtml((business.city || '') + (business.state ? ', ' + business.state : ''))}</span></div>
+   652→                        <div class="feature-chip" id="statCategoriaWrap" title="Categoría"><i class="fas fa-tag"></i> <span id="statCategoria">${escapeHtml(business.category_name || '--')}</span></div>
+   653→                        ${reviewCount > 0 ? `<div class="feature-chip" style="background:linear-gradient(135deg,#fff8e1,#fff3cd);color:#f57f17;border:1px solid #ffd54f;" title="Calificación"><i class="fas fa-star" style="color:#ffc107;"></i> <span>${Math.round(avgRating * 10) / 10} (${reviewCount} reseña${reviewCount !== 1 ? 's' : ''})</span></div>` : ''}
+   654→                        ${business.especialidad ? `<div class="feature-chip" style="background:linear-gradient(135deg,#e74c3c,#c0392b);color:#fff;" title="Especialidad"><i class="fas fa-stethoscope"></i> <span>${escapeHtml(business.especialidad)}</span></div>` : ''}
+   655→                        <div class="feature-chip" id="statScheduleWrap" style="display:none;" title="Horario"><i class="fas fa-clock"></i> <span id="statSchedule">--</span></div>
+   656→                        <div class="feature-chip" id="statPhoneWrap" style="display:none;" title="Teléfono"><i class="fas fa-phone"></i> <span id="statPhone">--</span></div>
+   657→                        <div class="feature-chip" id="statWhatsAppWrap" style="display:none;" title="WhatsApp"><i class="fab fa-whatsapp"></i> <span id="statWhatsApp">WhatsApp</span></div>
+   658→                        <div class="feature-chip" id="statFeatureParking" style="display:none;" title="Estacionamiento"><i class="fas fa-parking"></i> <span>Estacionamiento</span></div>
+   659→                        <div class="feature-chip" id="statFeatureWifi" style="display:none;" title="WiFi"><i class="fas fa-wifi"></i> <span>WiFi</span></div>
+   660→                        <div class="feature-chip" id="statFeatureCards" style="display:none;" title="Acepta tarjetas"><i class="fas fa-credit-card"></i> <span>Tarjetas</span></div>
+   661→                        <div class="feature-chip" id="statFeatureDelivery" style="display:none;" title="Delivery"><i class="fas fa-motorcycle"></i> <span>Delivery</span></div>
+   662→                        <div class="feature-chip" id="statFeatureOutdoor" style="display:none;" title="Área al aire libre"><i class="fas fa-umbrella-beach"></i> <span>Exterior</span></div>
+   663→                    </div>
+   664→                    <div class="compact-description collapsed" id="propDescription">
+   665→                        <p>${escapeHtml(business.description || 'Sin descripción disponible.')}</p>
+   666→                    </div>
+   667→                    <button class="description-toggle" id="descriptionToggle" style="display:none;">Leer más <i class="fas fa-chevron-down"></i></button>
+   668→                </div>
+   669→
+   670→                <div class="business-gallery" id="businessGallery">
+   671→                    <div class="gallery-main">
+   672→                        <img id="mainImage" src="" alt="" class="gallery-main-img" style="cursor:zoom-in;" onclick="document.getElementById('lightbox').classList.remove('hidden')">
+   673→                        <button class="gallery-nav gallery-prev" id="galleryPrev" aria-label="Anterior"><i class="fas fa-chevron-left"></i></button>
+   674→                        <button class="gallery-nav gallery-next" id="galleryNext" aria-label="Siguiente"><i class="fas fa-chevron-right"></i></button>
+   675→                        <div class="gallery-counter"><span id="galleryCurrent">1</span> / <span id="galleryTotal">1</span></div>
+   676→                        <button class="gallery-fullscreen" id="galleryFullscreen" aria-label="Pantalla completa"><i class="fas fa-expand"></i></button>
+   677→                        <div class="gallery-badges" id="galleryBadges"></div>
+   678→                    </div>
+   679→                    <div class="gallery-thumbnails" id="galleryThumbnails"></div>
+   680→                </div>
+   681→
+   682→                <div class="business-section hidden" id="featuresSection">
+   683→                    <h2 class="business-section-title">Características</h2>
+   684→                    <div class="features-list" id="featuresList"></div>
+   685→                </div>
+   686→
+   687→                <div class="business-section map-section-wrapper hidden" id="mapSection">
+   688→                    <h2 class="business-section-title">Ubicación</h2>
+   689→                    <div class="business-map" id="businessMap"></div>
+   690→                    <button class="open-map-modal-btn" id="openMapModalBtn"><i class="fas fa-expand"></i> Ver en Mapa Completo</button>
+   691→                </div>
+   692→
+   693→                <div class="business-section contact-section">
+   694→                    <h2 class="business-section-title">Contactar al Negocio</h2>
+   695→                    <div class="contact-actions" id="contactActions">
+   696→                        <a href="#" class="btn btn-whatsapp btn-full btn-lg" id="mainWhatsApp" style="display:none;" target="_blank" rel="noopener"><i class="fab fa-whatsapp"></i> Contactar por WhatsApp</a>
+   697→                        <a href="#" class="btn btn-full btn-lg" id="emailContactBtn" style="display:none;background:linear-gradient(135deg,#2563eb,#3b82f6);color:#fff;font-weight:600;border-radius:12px;text-align:center;text-decoration:none;padding:14px 24px;font-size:1rem;"><i class="fas fa-envelope"></i> Contactar por Email</a>
+   698→                        ${business.google_maps_url ? `<a href="${business.google_maps_url}" target="_blank" rel="noopener" class="btn btn-full btn-lg" style="display:block;margin-top:8px;background:linear-gradient(135deg,#4285F4,#34A853,#FBBC04,#EA4335);color:#fff;font-weight:700;border-radius:12px;text-align:center;text-decoration:none;padding:14px 24px;font-size:1rem;"><i class="fab fa-google"></i> Ver Perfil de Google</a>` : ''}
+   699→                        <button class="btn btn-primary btn-full btn-lg" id="openChatBtn" style="margin-top:8px;"><i class="fas fa-comment-dots"></i> Enviar Mensaje</button>
+   700→                        <button class="btn btn-full btn-lg" id="shareWhatsAppBtn" style="display:none;margin-top:8px;background:#fff;color:#111;border:2px solid #111;font-weight:600;border-radius:12px;text-align:center;padding:14px 24px;font-size:1rem;cursor:pointer;"><i class="fab fa-whatsapp" style="color:#25d366;"></i> Compartir por WhatsApp</button>
+   701→                    </div>
+   702→                </div>
+   703→
+   704→                ${(() => { const instagram = normalizeSocialUrl(business.instagram, 'instagram'); const facebook = normalizeSocialUrl(business.facebook, 'facebook'); const twitter = normalizeSocialUrl(business.twitter, 'twitter'); const tiktok = normalizeSocialUrl(business.tiktok, 'tiktok'); const youtube = normalizeSocialUrl(business.youtube, 'youtube'); const hasSocial = instagram || facebook || twitter || tiktok || youtube; if (!hasSocial && !business.slug) return ''; return `
+   705→                <div class="pd-social-section" style="padding:20px 24px;">
+   706→                  <div style="font-size:1.1rem;font-weight:700;color:#0f172a;margin-bottom:16px;display:flex;align-items:center;gap:8px;">
+   707→                    <i class="fas fa-share-nodes" style="color:#006EE3;"></i> Redes Sociales y Web
+   708→                  </div>
+   709→                  <div style="display:flex;gap:15px;flex-wrap:wrap;">
+   710→                    ${business.slug ? `<a href="/web/${escapeHtml(business.slug)}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:10px;padding:16px 30px;border-radius:18px;background:linear-gradient(135deg,#006EE3,#0ea5e9);color:#fff;text-decoration:none;font-size:1.35rem;font-weight:700;"><i class="fas fa-globe" style="font-size:1.5rem;"></i> Sitio Web</a>` : ''}
+   711→                    ${instagram ? `<a href="${escapeHtml(instagram)}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:10px;padding:16px 30px;border-radius:18px;background:linear-gradient(135deg,#833ab4,#fd1d1d,#fcb045);color:#fff;text-decoration:none;font-size:1.35rem;font-weight:700;"><i class="fab fa-instagram" style="font-size:1.5rem;"></i> Instagram</a>` : ''}
+   712→                    ${facebook ? `<a href="${escapeHtml(facebook)}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:10px;padding:16px 30px;border-radius:18px;background:#1877f2;color:#fff;text-decoration:none;font-size:1.35rem;font-weight:700;"><i class="fab fa-facebook-f" style="font-size:1.5rem;"></i> Facebook</a>` : ''}
+   713→                    ${twitter ? `<a href="${escapeHtml(twitter)}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:10px;padding:16px 30px;border-radius:18px;background:#000;color:#fff;text-decoration:none;font-size:1.35rem;font-weight:700;"><i class="fab fa-x-twitter" style="font-size:1.5rem;"></i> X (Twitter)</a>` : ''}
+   714→                    ${tiktok ? `<a href="${escapeHtml(tiktok)}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:10px;padding:16px 30px;border-radius:18px;background:#010101;color:#fff;text-decoration:none;font-size:1.35rem;font-weight:700;"><i class="fab fa-tiktok" style="font-size:1.5rem;"></i> TikTok</a>` : ''}
+   715→                    ${youtube ? `<a href="${escapeHtml(youtube)}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:10px;padding:16px 30px;border-radius:18px;background:#ff0000;color:#fff;text-decoration:none;font-size:1.35rem;font-weight:700;"><i class="fab fa-youtube" style="font-size:1.5rem;"></i> YouTube</a>` : ''}
+   716→                  </div>
+   717→                </div>`; })()}
+   718→
+   719→                ${(() => {
+   720→                    const raw = business.video_url;
+   721→                    if (!raw) return '';
+   722→                    let urls = [];
+   723→                    if (raw.startsWith('[')) { try { urls = JSON.parse(raw); } catch(e) { urls = [raw]; } }
+   724→                    else { urls = [raw]; }
+   725→                    urls = urls.filter(u => u);
+   726→                    if (!urls.length) return '';
+   727→                    return `
+   728→                <div style="padding:16px 20px;">
+   729→                  <div style="font-size:0.85rem;font-weight:700;color:#0f172a;margin-bottom:12px;display:flex;align-items:center;gap:6px;">
+   730→                    <i class="fas fa-play-circle" style="color:#006EE3;"></i> Video${urls.length > 1 ? 's' : ''} (${urls.length})
+   731→                  </div>
+   732→                  <div style="display:${urls.length > 1 ? 'grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;' : 'block;max-width:320px;margin:0 auto;'}border-radius:16px;overflow:hidden;">
+   733→                    ${urls.map(u => '<div style="border-radius:16px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.1);">' + getVideoEmbed(u) + '</div>').join('')}
+   734→                  </div>
+   735→                </div>`;
+   736→                })()}
+   737→
+   738→                <section class="business-section" id="productsSection" style="display:none;">
+   739→                    <div class="section-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+   740→                        <h2 class="business-section-title"><i class="fas fa-boxes-stacked" style="color:#006EE3;"></i> Productos</h2>
+   741→                        <a href="/marketplace.html" class="section-link" id="viewAllProducts">Ver más <i class="fas fa-arrow-right"></i></a>
+   742→                    </div>
+   743→                    <div class="products-grid" id="businessProductsGrid"></div>
+   744→                </section>
+   745→
+   746→                <section class="business-section" id="jobsSection" style="display:none;">
+   747→                    <div class="section-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+   748→                        <h2 class="business-section-title"><i class="fas fa-briefcase" style="color:#1a73e8;"></i> Empleo</h2>
+   749→                        <a href="/empleo.html" class="section-link" id="viewAllJobs" style="display:none;">Ver más <i class="fas fa-arrow-right"></i></a>
+   750→                    </div>
+   751→                    <div class="jobs-list" id="businessJobsList"></div>
+   752→                    <div id="businessJobsEmpty" style="display:none;text-align:center;padding:24px 16px;">
+   753→                        <a href="/empleo.html" class="btn btn-secondary" style="display:inline-flex;align-items:center;gap:8px;padding:10px 24px;font-size:0.92rem;border-radius:10px;text-decoration:none;width:100%;max-width:400px;justify-content:center;"><i class="fas fa-briefcase"></i> Ir a ofertas de empleo</a>
+   754→                    </div>
+   755→                </section>
+   756→
+   757→                <section class="business-section" id="servicesSection" style="display:none;">
+   758→                    <div class="section-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+   759→                        <h2 class="business-section-title"><i class="fas fa-concierge-bell" style="color:#f59e0b;"></i> Servicios</h2>
+   760→                    </div>
+   761→                    <div class="services-list" id="businessServicesList"></div>
+   762→                </section>
+   763→            </div>
+   764→
+   765→            <section class="section hidden" id="similarSection" style="margin-top:28px;">
+   766→                <div class="section-header">
+   767→                    <h2 class="section-title" style="display:flex;align-items:center;gap:8px;"><i class="fas fa-store" style="color:#006EE3;font-size:0.9rem;"></i> Negocios Similares</h2>
+   768→                    <a href="/search.html" class="section-link" style="font-size:0.8rem;">Ver más <i class="fas fa-arrow-right"></i></a>
+   769→                </div>
+   770→                <div class="business-grid" id="similarGrid"></div>
+   771→            </section>
+   772→        </div>
+   773→    </main>
+   774→
+   775→    <div class="lightbox hidden" id="lightbox">
+   776→        <button class="lightbox-close" id="lightboxClose">&times;</button>
+   777→        <button class="lightbox-nav lightbox-prev" id="lightboxPrev"><i class="fas fa-chevron-left"></i></button>
+   778→        <img id="lightboxImage" src="" alt="" class="lightbox-img">
+   779→        <button class="lightbox-nav lightbox-next" id="lightboxNext"><i class="fas fa-chevron-right"></i></button>
+   780→        <div class="lightbox-counter" id="lightboxCounter"></div>
+   781→    </div>
+   782→
+   783→    <div class="map-modal" id="mapModal">
+   784→        <div class="map-modal-header">
+   785→            <h3><i class="fas fa-map-marker-alt"></i> Ubicación del Negocio</h3>
+   786→            <button class="map-modal-close" id="mapModalClose" aria-label="Cerrar mapa"><i class="fas fa-times"></i></button>
+   787→        </div>
+   788→        <div class="map-modal-body"><div id="mapModalMap"></div></div>
+   789→    </div>
+   790→
+   791→    <div class="toast-container" id="toastContainer"></div>
+   792→    <footer class="footer">
+   793→        <div class="container">
+   794→            <div class="footer-bottom">
+   795→                <p>&copy; ${new Date().getFullYear()} En Santiago. Todos los derechos reservados.</p>
+   796→                <p><a href="https://maps.app.goo.gl/Jz2QTADrNNneQtGd9" target="_blank" rel="noopener noreferrer">Página web desarrollada por Grupo 360 Soluciones</a></p>
+   797→                <p><a href="http://coporo.pages.dev/" target="_blank" rel="noopener noreferrer">Diseño de páginas webs - SEO Local -</a></p>
+   798→            </div>
+   799→        </div>
+   800→    </footer>
+   801→    <script src="/js/app.js?v=7"></script>
+   802→    <script>window.__BUSINESS_ID = ${business.id}; window.__BUSINESS_SLUG = '${escapeJs(business.slug)}';</script>
+   803→    <script src="/js/business-detail.js?v=9"></script>
+   804→    <script src="/js/chat.js?v=3"></script>
+   805→    <script src="/js/review-widget.js?v=3"></script>
+   806→    <script src="/js/ai-chatbot.js?v=3"></script>
+   807→    <script>setTimeout(function(){fetch('/api/business-stats/track',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({business_id:${business.id},event_type:'view',source:'ficha'})}).catch(function(){})},0);</script>
+   808→</body>
+   809→</html>`;
+   810→
+   811→  return new Response(html, {
+   812→    status: 200,
+   813→    headers: {
+   814→      'Content-Type': 'text/html; charset=utf-8',
+   815→      'Cache-Control': 'no-store',
+   816→      'Link': `<${finalCanonical}>; rel="canonical"`,
+   817→    },
+   818→  });
+   819→}

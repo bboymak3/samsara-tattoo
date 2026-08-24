@@ -1,0 +1,1340 @@
+     1→// functions/web/[slug].js
+     2→// GET: Standalone landing page for a business at /web/:slug
+     3→// Full one-page website generated from business data, SEO-friendly, shareable
+     4→
+     5→export async function onRequestGet(context) {
+     6→  try {
+     7→    const { env, params } = context;
+     8→    const { slug } = params;
+     9→
+    10→    if (!env.DB) {
+    11→      return new Response('Database unavailable', { status: 500 });
+    12→    }
+    13→
+    14→    // Business data
+    15→    const business = await env.DB.prepare(
+    16→      `SELECT 
+    17→        b.*,
+    18→        c.name as category_name, c.slug as category_slug,
+    19→        (SELECT url FROM images WHERE business_id = b.id AND is_cover = 1 LIMIT 1) as cover_image,
+    20→        (SELECT COUNT(*) FROM products WHERE business_id = b.id AND (status = 'approved' OR status IS NULL)) as product_count,
+    21→        (SELECT COUNT(*) FROM images WHERE business_id = b.id) as image_count
+    22→      FROM businesses b
+    23→      LEFT JOIN categories c ON b.category_id = c.id
+    24→      WHERE b.slug = ? AND b.status = 'approved'`
+    25→    ).bind(slug).first();
+    26→
+    27→    if (!business) {
+    28→      return new Response('<h1>Negocio no encontrado</h1>', {
+    29→        status: 404,
+    30→        headers: { 'Content-Type': 'text/html; charset=utf-8' },
+    31→      });
+    32→    }
+    33→
+    34→    // ─── Web page mode: auto (landing propia) vs external (URL del negocio) vs none ───
+    35→    const webPageMode = business.web_page_mode || 'auto';
+    36→    const webUrl = business.web_url || business.website || '';
+    37→
+    38→    if (webPageMode === 'external' && webUrl) {
+    39→      // Redirigir a la URL externa del negocio
+    40→      const externalUrl = webUrl.startsWith('http') ? webUrl : 'https://' + webUrl;
+    41→      return new Response('', {
+    42→        status: 302,
+    43→        headers: { 'Location': externalUrl },
+    44→      });
+    45→    }
+    46→
+    47→    if (webPageMode === 'none') {
+    48→      // Sin página web — redirigir a la ficha del negocio
+    49→      const bizTipo = (business.business_type || 'negocio').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    50→      const bizCat = business.category_slug || 'otro';
+    51→      return new Response('', {
+    52→        status: 302,
+    53→        headers: { 'Location': `/${bizTipo}/${bizCat}/${slug}` },
+    54→      });
+    55→    }
+    56→
+    57→    // Mode 'auto': continuar y generar la landing page propia
+    58→
+    59→    // Products
+    60→    const products = await env.DB.prepare(
+    61→      `SELECT id, name, price, slug, image, description
+    62→       FROM products WHERE business_id = ? AND (status = 'approved' OR status IS NULL)
+    63→       ORDER BY sort_order ASC, created_at DESC LIMIT 12`
+    64→    ).bind(business.id).all();
+    65→
+    66→    // Images gallery
+    67→    const images = await env.DB.prepare(
+    68→      `SELECT url, is_cover FROM images WHERE business_id = ? ORDER BY is_cover DESC, id ASC LIMIT 10`
+    69→    ).bind(business.id).all();
+    70→
+    71→    const baseUrl = 'https://en-santiago.pages.dev';
+    72→    const bizTipo = (business.business_type || 'negocio').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    73→    const bizCat = business.category_slug || 'otro';
+    74→    const title = business.title || 'Negocio';
+    75→    const fullDescription = business.description || '';
+    76→    const metaDescription = fullDescription
+    77→      ? fullDescription.substring(0, 160)
+    78→      : `Visita ${title} - ${business.category_name || 'Negocio'} en ${business.city || 'Santiago de Chile'}. ${fullDescription ? fullDescription.substring(0, 100) : ''}`;
+    79→    const imageUrl = business.cover_image || business.logo || `${baseUrl}/images/favicon.jpeg`;
+    80→    const whatsappNumber = (business.whatsapp || business.phone || '').replace(/[^0-9]/g, '');
+    81→    const whatsappLink = whatsappNumber
+    82→      ? `https://wa.me/${whatsappNumber}?text=${encodeURIComponent('Hola, vi tu pagina web en En Santiago y me interesa conocer mas sobre ' + title)}`
+    83→      : '#';
+    84→    const phoneClean = (business.phone || '').replace(/[^0-9]/g, '');
+    85→    const mapQuery = encodeURIComponent(`${business.address || ''} ${business.city || ''} ${business.state || ''} Santiago de Chile`);
+    86→    const socialUrls = {
+    87→      instagram: normalizeSocialUrl(business.instagram, 'instagram'),
+    88→      facebook: normalizeSocialUrl(business.facebook, 'facebook'),
+    89→      twitter: normalizeSocialUrl(business.twitter, 'twitter'),
+    90→      tiktok: normalizeSocialUrl(business.tiktok, 'tiktok'),
+    91→      youtube: normalizeSocialUrl(business.youtube, 'youtube'),
+    92→    };
+    93→
+    94→    // Generate "Why choose us" points from business data
+    95→    const whyUs = [];
+    96→    if (business.category_name) whyUs.push({ icon: 'fas fa-award', title: `Expertos en ${business.category_name}`, desc: `Somos un negocio especializado en ${business.category_name.toLowerCase()} con compromiso de calidad.` });
+    97→    if (business.city || business.state) whyUs.push({ icon: 'fas fa-map-marker-alt', title: `Ubicados en ${business.city || business.state || 'Santiago de Chile'}`, desc: `Atendemos directamente en ${business.city || business.state || 'tu zona'} con atencion personalizada.` });
+    98→    if (business.has_delivery) whyUs.push({ icon: 'fas fa-motorcycle', title: 'Servicio de Delivery', desc: 'Te llevamos nuestros productos directamente a la puerta de tu casa.' });
+    99→    if (business.has_parking) whyUs.push({ icon: 'fas fa-car', title: 'Estacionamiento Disponible', desc: 'Contamos con parking para que visites con comodidad.' });
+   100→    if (business.has_wifi) whyUs.push({ icon: 'fas fa-wifi', title: 'WiFi Gratuito', desc: 'Disfruta de conexion WiFi gratis mientras nos visitas.' });
+   101→    if (business.has_card) whyUs.push({ icon: 'fas fa-credit-card', title: 'Pago con Tarjeta', desc: 'Aceptamos pagos con tarjeta por tu comodidad.' });
+   102→    if (business.has_outdoor) whyUs.push({ icon: 'fas fa-umbrella-beach', title: 'Area al Aire Libre', desc: 'Disfruta de un ambiente al aire libre en nuestras instalaciones.' });
+   103→    if (whatsappNumber) whyUs.push({ icon: 'fab fa-whatsapp', title: 'Atencion por WhatsApp', desc: 'Escribenos al instante y te respondemos rapidamente.' });
+   104→    if (business.schedule) whyUs.push({ icon: 'fas fa-clock', title: 'Horarios Flexibles', desc: `Abierto: ${business.schedule}. Siempre disponibles para ti.` });
+   105→    if (fullDescription.length > 50) whyUs.push({ icon: 'fas fa-heart', title: 'Compromiso con el Cliente', desc: 'Nuestra prioridad es brindarte la mejor experiencia y atencion.' });
+   106→    // Ensure at least 4 items
+   107→    if (whyUs.length < 4) {
+   108→      whyUs.push({ icon: 'fas fa-star', title: 'Calidad Garantizada', desc: 'Trabajamos cada dia para ofrecerte los mejores productos y servicios.' });
+   109→    }
+   110→    if (whyUs.length < 4) {
+   111→      whyUs.push({ icon: 'fas fa-users', title: 'Clientes Satisfechos', desc: 'La satisfaccion de nuestros clientes es nuestro mayor reconocimiento.' });
+   112→    }
+   113→
+   114→    // Generate FAQ from business data
+   115→    const faqs = [];
+   116→    faqs.push({ q: `Que es ${title}?`, a: `${title} es un negocio de ${business.category_name ? business.category_name.toLowerCase() : 'servicios'}${business.city ? ' ubicado en ' + business.city + (business.state ? ', ' + business.state : '') : ' en Santiago de Chile'}.${fullDescription ? ' ' + fullDescription : ''}` });
+   117→    if (business.address) faqs.push({ q: `Cual es la direccion de ${title}?`, a: `${title} se encuentra en ${business.address}${business.city ? ', ' + business.city : ''}. Puedes visitarnos o contactarnos para mayor informacion.` });
+   118→    if (whatsappNumber) faqs.push({ q: `Como puedo contactar a ${title}?`, a: `Puedes contactarnos por WhatsApp al ${business.whatsapp || business.phone}${phoneClean ? ', o llamar al ' + business.phone : ''}. Tambien puedes escribirnos a traves del boton de WhatsApp en esta pagina.` });
+   119→    if (business.schedule) faqs.push({ q: `Cual es el horario de atencion?`, a: `Nuestro horario de atencion es: ${business.schedule}. Te recomendamos contactarnos por WhatsApp para confirmar disponibilidad.` });
+   120→    if (business.has_delivery) faqs.push({ q: `Hacen delivery?`, a: `Si! ${title} cuenta con servicio de delivery. Contactanos por WhatsApp para hacer tu pedido y te lo llevamos a la puerta de tu casa.` });
+   121→    if (business.has_card) faqs.push({ q: `Aceptan pagos con tarjeta?`, a: `Si, aceptamos pagos con tarjeta de credito y debito para tu mayor comodidad.` });
+   122→    faqs.push({ q: `Tienen redes sociales?`, a: `Puedes seguirnos${socialUrls.instagram ? ' en Instagram: ' + socialUrls.instagram : ''}${socialUrls.facebook ? ' y en Facebook: ' + socialUrls.facebook : ''}. Ahi publicamos nuestras novedades y promociones.` });
+   123→
+   124→    // Generate services from description keywords
+   125→    const services = extractServices(fullDescription, business);
+   126→
+   127→    // ─── IA: Optimizar contenido SEO con Workers AI ───────────────
+   128→    // Genera: meta description, hero tagline, FAQ mejoradas, servicios detectados
+   129→    // Cache: usa el campo ai_cache (JSON) del negocio para no llamar la IA en cada request
+   130→    let aiContent = {
+   131→      metaDescription: `${title} — ${business.category_name || 'Negocio'} en ${business.city || 'Santiago'}. ${fullDescription.substring(0, 120)}`.substring(0, 160),
+   132→      heroTagline: `Bienvenido a ${title}`,
+   133→      heroSubtitle: `${business.category_name || 'Negocio'} en ${business.city || 'Santiago de Chile'}`,
+   134→      aboutText: fullDescription || `Descubre los servicios de ${title} en ${business.city || 'Santiago'}.`,
+   135→      whyChooseText: `En ${title} nos especializamos en ofrecer ${business.category_name ? business.category_name.toLowerCase() : 'servicios de calidad'} en ${business.city || 'Santiago de Chile'}.`,
+   136→      aiFaqs: null, // Si la IA genera FAQ, se usan en lugar de las hardcoded
+   137→    };
+   138→
+   139→    // Determinar si la cache de IA sigue siendo válida (TTL de 30 días)
+   140→    let cacheValid = false;
+   141→    let cachedData = null;
+   142→    if (business.ai_cache) {
+   143→      try {
+   144→        cachedData = JSON.parse(business.ai_cache);
+   145→        const cachedAt = cachedData._cached_at || 0;
+   146→        const ageMs = Date.now() - cachedAt;
+   147→        const TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 días
+   148→        cacheValid = cachedAt > 0 && ageMs < TTL_MS && cachedData.metaDescription;
+   149→      } catch (e) { cacheValid = false; }
+   150→    }
+   151→
+   152→    // Llamar IA solo si: hay binding AI y (no hay cache válida)
+   153→    if (env.AI && !cacheValid) {
+   154→      try {
+   155→        const aiResult = await env.AI.run('@cf/meta/llama-3.1-8b-instruct-fp8', {
+   156→          messages: [
+   157→            {
+   158→              role: 'system',
+   159→              content: `Eres un experto en SEO y marketing digital. Generas contenido optimizado para landing pages de negocios en Santiago de Chile. Responde SOLO con JSON valido, sin texto adicional ni markdown.`
+   160→            },
+   161→            {
+   162→              role: 'user',
+   163→              content: `Genera contenido SEO para la landing page de este negocio. Responde en JSON con esta estructura exacta:
+   164→{
+   165→  "metaDescription": "meta description de maximo 155 caracteres, persuasiva, con keywords del negocio y ubicacion",
+   166→  "heroTagline": "titulo corto atractivo para el hero (max 50 caracteres)",
+   167→  "heroSubtitle": "subtitulo del hero (max 80 caracteres)",
+   168→  "aboutText": "parrafo de 2-3 lineas describiendo el negocio de forma atractiva",
+   169→  "whyChooseText": "texto de 1-2 lineas sobre por que elegir este negocio",
+   170→  "faqs": [
+   171→    {"q": "pregunta frecuente 1", "a": "respuesta detallada 1"},
+   172→    {"q": "pregunta frecuente 2", "a": "respuesta detallada 2"},
+   173→    {"q": "pregunta frecuente 3", "a": "respuesta detallada 3"},
+   174→    {"q": "pregunta frecuente 4", "a": "respuesta detallada 4"}
+   175→  ]
+   176→}
+   177→
+   178→Datos del negocio:
+   179→- Nombre: ${title}
+   180→- Categoria: ${business.category_name || 'No especificada'}
+   181→- Descripcion: ${fullDescription || 'Sin descripcion'}
+   182→- Ciudad: ${business.city || 'Santiago'}
+   183→- Direccion: ${business.address || 'No disponible'}
+   184→- Telefono: ${business.phone || 'No disponible'}
+   185→- WhatsApp: ${business.whatsapp || 'No disponible'}
+   186→- Horarios: ${business.schedule || 'No especificados'}
+   187→- Instagram: ${business.instagram || 'No'}
+   188→- Facebook: ${business.facebook || 'No'}
+   189→- Servicios detectados: ${services.map(s => s.name).join(', ') || 'No especificados'}
+   190→- Delivery: ${business.has_delivery ? 'Si' : 'No'}
+   191→- Estacionamiento: ${business.has_parking ? 'Si' : 'No'}
+   192→- WiFi: ${business.has_wifi ? 'Si' : 'No'}
+   193→- Pago con tarjeta: ${business.has_card ? 'Si' : 'No'}`
+   194→            }
+   195→          ],
+   196→          max_tokens: 1024,
+   197→        });
+   198→
+   199→        const aiText = (aiResult).response || '';
+   200→        const jsonMatch = aiText.match(/\{[\s\S]*\}/);
+   201→        if (jsonMatch) {
+   202→          const parsed = JSON.parse(jsonMatch[0]);
+   203→          aiContent = {
+   204→            metaDescription: (parsed.metaDescription || aiContent.metaDescription).substring(0, 160),
+   205→            heroTagline: parsed.heroTagline || aiContent.heroTagline,
+   206→            heroSubtitle: parsed.heroSubtitle || aiContent.heroSubtitle,
+   207→            aboutText: parsed.aboutText || aiContent.aboutText,
+   208→            whyChooseText: parsed.whyChooseText || aiContent.whyChooseText,
+   209→            aiFaqs: parsed.faqs || null,
+   210→            _cached_at: Date.now(),
+   211→          };
+   212→
+   213→          // Guardar en cache para futuros requests (no llamar IA cada vez)
+   214→          const cachePayload = JSON.stringify(aiContent);
+   215→          try {
+   216→            await env.DB.prepare('UPDATE businesses SET ai_cache = ? WHERE id = ?')
+   217→              .bind(cachePayload, business.id).run();
+   218→          } catch (cacheErr) {
+   219→            // Si no existe la columna ai_cache, crearla y reintentar
+   220→            try {
+   221→              await env.DB.prepare('ALTER TABLE businesses ADD COLUMN ai_cache TEXT').run();
+   222→              await env.DB.prepare('UPDATE businesses SET ai_cache = ? WHERE id = ?')
+   223→                .bind(cachePayload, business.id).run();
+   224→            } catch (e) { /* columna ya existe o error, continuar */ }
+   225→          }
+   226→        }
+   227→      } catch (aiError) {
+   228→        console.warn('IA optimization failed, using defaults:', aiError);
+   229→      }
+   230→    } else if (cacheValid && cachedData) {
+   231→      // Usar cache válida existente
+   232→      aiContent = { ...aiContent, ...cachedData };
+   233→    }
+   234→
+   235→    // Si la IA generó FAQ, usarlas
+   236→    if (aiContent.aiFaqs && Array.isArray(aiContent.aiFaqs) && aiContent.aiFaqs.length > 0) {
+   237→      faqs.length = 0;
+   238→      aiContent.aiFaqs.forEach(faq => {
+   239→        if (faq.q && faq.a) faqs.push({ q: faq.q, a: faq.a });
+   240→      });
+   241→    }
+   242→
+   243→    const html = `<!DOCTYPE html>
+   244→<html lang="es">
+   245→<head>
+   246→<!-- Google Tag Manager -->
+   247→<script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+   248→new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+   249→j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+   250→'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+   251→})(window,document,'script','dataLayer','GTM-TMH9V9QQ');</script>
+   252→<!-- End Google Tag Manager -->
+   253→<!-- Google tag (gtag.js) -->
+   254→<script async src="https://www.googletagmanager.com/gtag/js?id=G-RYF2N8ZD15"></script>
+   255→<script>
+   256→  window.dataLayer = window.dataLayer || [];
+   257→  function gtag(){dataLayer.push(arguments);}
+   258→  gtag('js', new Date());
+   259→
+   260→  gtag('config', 'G-RYF2N8ZD15');
+   261→</script>
+   262→    <meta charset="UTF-8">
+   263→    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+   264→    <link rel="icon" type="image/jpeg" href="/images/favicon.jpeg">
+   265→    <meta name="description" content="${escapeHtml(aiContent.metaDescription)}">
+   266→    <title>${escapeHtml(title)} - ${escapeHtml(business.category_name || 'Negocio')} en ${escapeHtml(business.city || 'Santiago de Chile')}</title>
+   267→    <meta name="robots" content="index, follow">
+   268→    <link rel="canonical" href="${baseUrl}/${bizTipo}/${bizCat}/${business.slug}">
+   269→
+   270→    <!-- Open Graph -->
+   271→    <meta property="og:type" content="website">
+   272→    <meta property="og:title" content="${escapeHtml(title)} - ${escapeHtml(business.category_name || '')} en ${escapeHtml(business.city || '')}">
+   273→    <meta property="og:description" content="${escapeHtml(metaDescription)}">
+   274→    <meta property="og:image" content="${imageUrl}">
+   275→    <meta property="og:url" content="${baseUrl}/web/${business.slug}">
+   276→
+   277→    <!-- Twitter Card -->
+   278→    <meta name="twitter:card" content="summary_large_image">
+   279→    <meta name="twitter:title" content="${escapeHtml(title)}">
+   280→    <meta name="twitter:description" content="${escapeHtml(metaDescription)}">
+   281→    <meta name="twitter:image" content="${imageUrl}">
+   282→
+   283→    <link rel="preconnect" href="https://fonts.googleapis.com">
+   284→    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+   285→    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+   286→    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+   287→
+   288→    <!-- JSON-LD Structured Data: LocalBusiness -->
+   289→    <script type="application/ld+json">${JSON.stringify((() => {
+   290→      const ld = {
+   291→        "@context": "https://schema.org",
+   292→        "@type": "LocalBusiness",
+   293→        "name": title,
+   294→        "url": `${baseUrl}/${bizTipo}/${bizCat}/${business.slug}`,
+   295→        "image": imageUrl
+   296→      };
+   297→      if (fullDescription) ld.description = fullDescription;
+   298→      if (whatsappNumber) ld.telephone = '+' + whatsappNumber;
+   299→      if (business.address) {
+   300→        ld.address = {
+   301→          "@type": "PostalAddress",
+   302→          "streetAddress": business.address,
+   303→          "addressLocality": business.city || undefined,
+   304→          "addressRegion": business.state || undefined,
+   305→          "addressCountry": "CL"
+   306→        };
+   307→      }
+   308→      if (business.lat || business.latitude) {
+   309→        ld.geo = {
+   310→          "@type": "GeoCoordinates",
+   311→          "latitude": Number(business.lat || business.latitude),
+   312→          "longitude": Number(business.lng || business.longitude)
+   313→        };
+   314→      }
+   315→      if (business.schedule) ld.openingHours = business.schedule;
+   316→      if (business.logo) ld.image = [business.logo, imageUrl].filter(Boolean);
+   317→      const sameAs = [socialUrls.instagram, socialUrls.facebook, socialUrls.twitter, socialUrls.tiktok, socialUrls.youtube, business.website].filter(Boolean);
+   318→      if (sameAs.length) ld.sameAs = sameAs;
+   319→      return ld;
+   320→    })())}</script>
+   321→
+   322→    <!-- JSON-LD: BreadcrumbList -->
+   323→    <script type="application/ld+json">${JSON.stringify({
+   324→      "@context": "https://schema.org",
+   325→      "@type": "BreadcrumbList",
+   326→      "itemListElement": [
+   327→        { "@type": "ListItem", "position": 1, "name": "Inicio", "item": "https://en-santiago.pages.dev/" },
+   328→        { "@type": "ListItem", "position": 2, "name": title, "item": `${baseUrl}/${bizTipo}/${bizCat}/${business.slug}` }
+   329→      ]
+   330→    })}</script>
+   331→
+   332→    <!-- JSON-LD FAQ -->
+   333→    ${faqs.length > 0 ? `<script type="application/ld+json">${JSON.stringify({
+   334→      "@context": "https://schema.org",
+   335→      "@type": "FAQPage",
+   336→      "mainEntity": faqs.slice(0, 6).map(f => ({
+   337→        "@type": "Question",
+   338→        "name": f.q,
+   339→        "acceptedAnswer": { "@type": "Answer", "text": f.a }
+   340→      }))
+   341→    })}</script>` : ''}
+   342→    <style>
+   343→        *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+   344→        html { scroll-behavior: smooth; }
+   345→        body {
+   346→            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+   347→            color: #1a1a2e; line-height: 1.6; background: #fff;
+   348→        }
+   349→        a { text-decoration: none; color: inherit; }
+   350→        img { max-width: 100%; }
+   351→
+   352→        /* === NAV === */
+   353→        .lp-nav {
+   354→            position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+   355→            background: rgba(255,255,255,0.95); backdrop-filter: blur(12px);
+   356→            -webkit-backdrop-filter: blur(12px);
+   357→            border-bottom: 1px solid #e5e7eb;
+   358→            padding: 12px 20px;
+   359→            display: flex; align-items: center; justify-content: space-between;
+   360→            transition: box-shadow 0.3s;
+   361→        }
+   362→        .lp-nav.scrolled { box-shadow: 0 2px 20px rgba(0,0,0,0.08); }
+   363→        .lp-nav-brand {
+   364→            font-size: 1.1rem; font-weight: 700; color: #006EE3;
+   365→            display: flex; align-items: center; gap: 6px;
+   366→        }
+   367→        .lp-nav-brand i { font-size: 1.3rem; }
+   368→        .lp-nav-links { display: flex; gap: 16px; align-items: center; }
+   369→        .lp-nav-links a {
+   370→            font-size: 0.82rem; font-weight: 600; color: #64748b; transition: color 0.2s;
+   371→        }
+   372→        .lp-nav-links a:hover { color: #006EE3; }
+   373→        .lp-nav-cta {
+   374→            background: #25d366 !important; color: #fff !important;
+   375→            padding: 8px 16px; border-radius: 8px;
+   376→            font-size: 0.82rem !important; font-weight: 600 !important;
+   377→            display: flex; align-items: center; gap: 6px;
+   378→            transition: transform 0.2s, box-shadow 0.2s;
+   379→        }
+   380→        .lp-nav-cta:hover { transform: translateY(-1px); box-shadow: 0 4px 15px rgba(37,211,102,0.3); }
+   381→        @media (max-width: 768px) {
+   382→            .lp-nav-links a:not(.lp-nav-cta) { display: none; }
+   383→        }
+   384→
+   385→        /* === HERO === */
+   386→        .lp-hero {
+   387→            min-height: 100vh; display: flex; align-items: center; justify-content: center;
+   388→            position: relative; overflow: hidden;
+   389→            background: linear-gradient(135deg, #006EE3 0%, #005BB5 50%, #004899 100%);
+   390→            padding: 100px 20px 60px;
+   391→        }
+   392→        .lp-hero-bg {
+   393→            position: absolute; inset: 0;
+   394→            background-image: url('${business.cover_image || ''}');
+   395→            background-size: cover; background-position: center;
+   396→            opacity: 0.15;
+   397→        }
+   398→        .lp-hero-banner {
+   399→            position: absolute; inset: 0;
+   400→            background-size: cover; background-position: center;
+   401→            background-repeat: no-repeat;
+   402→        }
+   403→        .lp-hero-overlay {
+   404→            position: absolute; inset: 0;
+   405→            background: linear-gradient(180deg, rgba(0,0,0,0.3) 0%, rgba(0,0,0,0.6) 100%);
+   406→        }
+   407→        .lp-hero-logo {
+   408→            max-height: 100px; max-width: 280px; width: auto;
+   409→            border-radius: 16px; object-fit: contain;
+   410→            filter: drop-shadow(0 4px 12px rgba(0,0,0,0.4));
+   411→            margin-bottom: 20px;
+   412→        }
+   413→        .lp-hero-pattern {
+   414→            position: absolute; inset: 0; opacity: 0.05;
+   415→            background-image: radial-gradient(circle at 25px 25px, white 2%, transparent 0%);
+   416→            background-size: 50px 50px;
+   417→        }
+   418→        .lp-hero-content {
+   419→            position: relative; z-index: 2;
+   420→            text-align: center; max-width: 700px;
+   421→        }
+   422→        .lp-hero-badge {
+   423→            display: inline-flex; align-items: center; gap: 8px;
+   424→            background: rgba(255,255,255,0.15); backdrop-filter: blur(8px);
+   425→            padding: 8px 20px; border-radius: 50px;
+   426→            font-size: 0.85rem; font-weight: 600; color: rgba(255,255,255,0.9);
+   427→            margin-bottom: 24px;
+   428→        }
+   429→        .lp-hero-title {
+   430→            font-size: 3.2rem; font-weight: 800; color: #fff;
+   431→            line-height: 1.15; margin-bottom: 16px; letter-spacing: -0.5px;
+   432→        }
+   433→        .lp-hero-subtitle {
+   434→            font-size: 1.15rem; color: rgba(255,255,255,0.85);
+   435→            margin-bottom: 32px; max-width: 550px; margin-left: auto; margin-right: auto;
+   436→            line-height: 1.7;
+   437→        }
+   438→        .lp-hero-actions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+   439→        .lp-hero-stats {
+   440→            display: flex; gap: 32px; justify-content: center; margin-top: 48px;
+   441→            flex-wrap: wrap;
+   442→        }
+   443→        .lp-hero-stat {
+   444→            text-align: center;
+   445→        }
+   446→        .lp-hero-stat-value {
+   447→            font-size: 1.5rem; font-weight: 800; color: #fff;
+   448→        }
+   449→        .lp-hero-stat-label {
+   450→            font-size: 0.75rem; color: rgba(255,255,255,0.7); text-transform: uppercase;
+   451→            letter-spacing: 1px;
+   452→        }
+   453→        .lp-btn {
+   454→            display: inline-flex; align-items: center; gap: 8px;
+   455→            padding: 14px 28px; border-radius: 12px;
+   456→            font-size: 1rem; font-weight: 700;
+   457→            transition: all 0.3s; border: none; cursor: pointer;
+   458→        }
+   459→        .lp-btn-whatsapp {
+   460→            background: #25d366; color: #fff;
+   461→            box-shadow: 0 4px 20px rgba(37,211,102,0.4);
+   462→        }
+   463→        .lp-btn-whatsapp:hover { transform: translateY(-2px); box-shadow: 0 8px 30px rgba(37,211,102,0.5); }
+   464→        .lp-btn-phone {
+   465→            background: rgba(255,255,255,0.15); color: #fff;
+   466→            backdrop-filter: blur(8px); border: 1px solid rgba(255,255,255,0.25);
+   467→        }
+   468→        .lp-btn-phone:hover { background: rgba(255,255,255,0.25); }
+   469→        .lp-btn-outline {
+   470→            background: transparent; color: #006EE3; border: 2px solid #006EE3;
+   471→        }
+   472→        .lp-btn-outline:hover { background: #006EE3; color: #fff; }
+   473→        @media (max-width: 768px) {
+   474→            .lp-hero { min-height: 90vh; padding: 80px 20px 40px; }
+   475→            .lp-hero-title { font-size: 2.2rem; }
+   476→            .lp-hero-subtitle { font-size: 1rem; }
+   477→            .lp-btn { padding: 12px 22px; font-size: 0.9rem; }
+   478→            .lp-hero-stats { gap: 20px; }
+   479→        }
+   480→
+   481→        /* === SECTIONS === */
+   482→        .lp-section { padding: 80px 20px; }
+   483→        .lp-section-grey { background: #f8fafb; }
+   484→        .lp-container { max-width: 960px; margin: 0 auto; }
+   485→        .lp-section-header { text-align: center; margin-bottom: 48px; }
+   486→        .lp-section-label {
+   487→            font-size: 0.8rem; font-weight: 700; text-transform: uppercase;
+   488→            letter-spacing: 2px; color: #006EE3; margin-bottom: 8px;
+   489→        }
+   490→        .lp-section-title {
+   491→            font-size: 2rem; font-weight: 800; color: #0f172a;
+   492→            line-height: 1.3; margin-bottom: 12px;
+   493→        }
+   494→        .lp-section-desc {
+   495→            font-size: 1rem; color: #64748b; max-width: 550px; margin: 0 auto; line-height: 1.7;
+   496→        }
+   497→
+   498→        /* === ABOUT / QUIENES SOMOS === */
+   499→        .lp-about-grid {
+   500→            display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: center;
+   501→        }
+   502→        .lp-about-image {
+   503→            width: 100%; border-radius: 20px; object-fit: cover; aspect-ratio: 4/3;
+   504→            box-shadow: 0 12px 40px rgba(0,0,0,0.1);
+   505→        }
+   506→        .lp-about-text {
+   507→            font-size: 1.05rem; color: #475569; line-height: 1.8; margin-bottom: 20px;
+   508→        }
+   509→        .lp-about-highlights {
+   510→            display: flex; flex-direction: column; gap: 12px; margin-top: 20px;
+   511→        }
+   512→        .lp-about-highlight {
+   513→            display: flex; align-items: center; gap: 12px;
+   514→            font-size: 0.95rem; color: #334155; font-weight: 500;
+   515→        }
+   516→        .lp-about-highlight i {
+   517→            color: #006EE3; font-size: 0.85rem; width: 24px; height: 24px;
+   518→            background: #EFF6FF; border-radius: 50%; display: flex; align-items: center;
+   519→            justify-content: center; flex-shrink: 0;
+   520→        }
+   521→        @media (max-width: 768px) {
+   522→            .lp-about-grid { grid-template-columns: 1fr; gap: 24px; }
+   523→        }
+   524→
+   525→        /* === SERVICES === */
+   526→        .lp-services-grid {
+   527→            display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 20px;
+   528→        }
+   529→        .lp-service-card {
+   530→            background: #fff; border-radius: 16px; padding: 28px;
+   531→            border: 1px solid #e5e7eb;
+   532→            transition: transform 0.2s, box-shadow 0.2s;
+   533→        }
+   534→        .lp-service-card:hover {
+   535→            transform: translateY(-3px); box-shadow: 0 8px 30px rgba(0,0,0,0.06);
+   536→        }
+   537→        .lp-service-icon {
+   538→            width: 52px; height: 52px; border-radius: 14px;
+   539→            display: flex; align-items: center; justify-content: center;
+   540→            font-size: 1.3rem; margin-bottom: 16px;
+   541→        }
+   542→        .lp-service-icon.green { background: #EFF6FF; color: #006EE3; }
+   543→        .lp-service-icon.blue { background: #eff6ff; color: #2563eb; }
+   544→        .lp-service-icon.amber { background: #fffbeb; color: #d97706; }
+   545→        .lp-service-icon.purple { background: #faf5ff; color: #7c3aed; }
+   546→        .lp-service-icon.rose { background: #fff1f2; color: #e11d48; }
+   547→        .lp-service-icon.teal { background: #f0fdfa; color: #0d9488; }
+   548→        .lp-service-title { font-size: 1.05rem; font-weight: 700; color: #0f172a; margin-bottom: 8px; }
+   549→        .lp-service-desc { font-size: 0.9rem; color: #64748b; line-height: 1.6; }
+   550→
+   551→        /* === WHY US === */
+   552→        .lp-why-grid {
+   553→            display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 24px;
+   554→        }
+   555→        .lp-why-card {
+   556→            background: #fff; border-radius: 16px; padding: 28px;
+   557→            border: 1px solid #e5e7eb; transition: transform 0.2s, box-shadow 0.2s;
+   558→            display: flex; gap: 16px; align-items: flex-start;
+   559→        }
+   560→        .lp-why-card:hover { transform: translateY(-2px); box-shadow: 0 8px 30px rgba(0,0,0,0.06); }
+   561→        .lp-why-icon {
+   562→            width: 48px; height: 48px; border-radius: 12px;
+   563→            background: linear-gradient(135deg, #006EE3, #005BB5);
+   564→            color: #fff; display: flex; align-items: center; justify-content: center;
+   565→            font-size: 1.1rem; flex-shrink: 0;
+   566→        }
+   567→        .lp-why-title { font-size: 1rem; font-weight: 700; color: #0f172a; margin-bottom: 4px; }
+   568→        .lp-why-desc { font-size: 0.88rem; color: #64748b; line-height: 1.6; }
+   569→
+   570→        /* === PRODUCTS === */
+   571→        .lp-products-grid {
+   572→            display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 20px;
+   573→        }
+   574→        .lp-product-card {
+   575→            background: #fff; border-radius: 16px; overflow: hidden;
+   576→            border: 1px solid #e5e7eb; transition: transform 0.2s, box-shadow 0.2s;
+   577→            position: relative;
+   578→        }
+   579→        .lp-product-card:hover { transform: translateY(-3px); box-shadow: 0 8px 30px rgba(0,0,0,0.08); }
+   580→        .lp-product-link {
+   581→            display: block; color: inherit; text-decoration: none;
+   582→        }
+   583→        .lp-product-link:hover { color: inherit; text-decoration: none; }
+   584→        .lp-product-img { width: 100%; height: 220px; object-fit: cover; background: #f1f5f9; }
+   585→        .lp-product-body { padding: 18px; }
+   586→        .lp-product-name {
+   587→            font-size: 1rem; font-weight: 700; color: #0f172a; margin-bottom: 6px;
+   588→            display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+   589→        }
+   590→        .lp-product-desc {
+   591→            font-size: 0.82rem; color: #64748b; line-height: 1.5; margin-bottom: 10px;
+   592→            display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+   593→        }
+   594→        .lp-product-price { font-size: 1.15rem; font-weight: 800; color: #006EE3; }
+   595→        .lp-product-footer {
+   596→            padding: 0 18px 18px;
+   597→        }
+   598→        .lp-product-wa {
+   599→            display: inline-flex; align-items: center; gap: 6px;
+   600→            padding: 8px 16px; border-radius: 8px; font-size: 0.8rem; font-weight: 600;
+   601→            background: #EFF6FF; color: #006EE3; transition: all 0.2s;
+   602→        }
+   603→        .lp-product-wa:hover { background: #006EE3; color: #fff; }
+   604→
+   605→        /* === INFO CARDS === */
+   606→        .lp-info-grid {
+   607→            display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; margin-top: 32px;
+   608→        }
+   609→        .lp-info-card {
+   610→            background: #fff; border-radius: 16px; padding: 24px;
+   611→            border: 1px solid #e5e7eb;
+   612→            display: flex; align-items: flex-start; gap: 16px;
+   613→            transition: transform 0.2s, box-shadow 0.2s;
+   614→        }
+   615→        .lp-info-card:hover { transform: translateY(-2px); box-shadow: 0 8px 30px rgba(0,0,0,0.06); }
+   616→        .lp-info-icon {
+   617→            width: 48px; height: 48px; border-radius: 12px;
+   618→            display: flex; align-items: center; justify-content: center;
+   619→            font-size: 1.2rem; flex-shrink: 0;
+   620→        }
+   621→        .lp-info-icon.green { background: #EFF6FF; color: #006EE3; }
+   622→        .lp-info-icon.blue { background: #eff6ff; color: #2563eb; }
+   623→        .lp-info-icon.amber { background: #fffbeb; color: #d97706; }
+   624→        .lp-info-icon.purple { background: #faf5ff; color: #7c3aed; }
+   625→        .lp-info-icon.red { background: #fef2f2; color: #dc2626; }
+   626→        .lp-info-icon.pink { background: #fdf2f8; color: #db2777; }
+   627→        .lp-info-card-label { font-size: 0.75rem; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; font-weight: 600; margin-bottom: 2px; }
+   628→        .lp-info-card-value { font-size: 1rem; font-weight: 700; color: #0f172a; }
+   629→        .lp-info-card-value a { color: #006EE3; }
+   630→        .lp-info-card-value a:hover { text-decoration: underline; }
+   631→
+   632→        /* === GALLERY === */
+   633→        .lp-gallery-grid {
+   634→            display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px;
+   635→        }
+   636→        .lp-gallery-img {
+   637→            width: 100%; height: auto; aspect-ratio: 4/3; object-fit: contain;
+   638→            border-radius: 12px; cursor: pointer; transition: transform 0.3s;
+   639→            background: #f8fafb;
+   640→        }
+   641→        .lp-gallery-img:hover { transform: scale(1.02); }
+   642→
+   643→        /* === FAQ === */
+   644→        .lp-faq-list { max-width: 700px; margin: 0 auto; display: flex; flex-direction: column; gap: 12px; }
+   645→        .lp-faq-item {
+   646→            background: #fff; border: 1px solid #e5e7eb; border-radius: 14px;
+   647→            overflow: hidden; transition: box-shadow 0.2s;
+   648→        }
+   649→        .lp-faq-item:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.05); }
+   650→        .lp-faq-q {
+   651→            display: flex; align-items: center; justify-content: space-between;
+   652→            padding: 18px 22px; cursor: pointer; font-weight: 600; color: #0f172a;
+   653→            font-size: 0.95rem; gap: 12px; user-select: none;
+   654→        }
+   655→        .lp-faq-q i { color: #006EE3; transition: transform 0.3s; font-size: 0.8rem; flex-shrink: 0; }
+   656→        .lp-faq-item.open .lp-faq-q i { transform: rotate(180deg); }
+   657→        .lp-faq-a {
+   658→            max-height: 0; overflow: hidden; transition: max-height 0.3s ease, padding 0.3s ease;
+   659→            padding: 0 22px; font-size: 0.92rem; color: #475569; line-height: 1.7;
+   660→        }
+   661→        .lp-faq-item.open .lp-faq-a { max-height: 300px; padding: 0 22px 18px; }
+   662→
+   663→        /* === SOCIAL === */
+   664→        .lp-social-grid {
+   665→            display: flex; gap: 16px; justify-content: center; flex-wrap: wrap;
+   666→        }
+   667→        .lp-social-card {
+   668→            display: flex; align-items: center; gap: 14px;
+   669→            padding: 18px 28px; border-radius: 14px;
+   670→            border: 1px solid #e5e7eb; background: #fff;
+   671→            transition: transform 0.2s, box-shadow 0.2s;
+   672→            font-weight: 600; font-size: 0.95rem; color: #0f172a;
+   673→        }
+   674→        .lp-social-card:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.06); }
+   675→        .lp-social-card i { font-size: 1.4rem; }
+   676→        .lp-social-card.ig i { color: #e4405f; }
+   677→        .lp-social-card.fb i { color: #1877f2; }
+   678→        .lp-social-card.wa i { color: #25d366; }
+   679→        .lp-social-card.web i { color: #0ea5e9; }
+   680→
+   681→        /* === MAP === */
+   682→        .lp-map-container { border-radius: 16px; overflow: hidden; border: 1px solid #e5e7eb; height: 350px; }
+   683→        .lp-map-container iframe { width: 100%; height: 100%; border: none; }
+   684→
+   685→        /* === CTA === */
+   686→        .lp-cta { background: linear-gradient(135deg, #006EE3 0%, #005BB5 100%); text-align: center; color: #fff; }
+   687→        .lp-cta-title { font-size: 2rem; font-weight: 800; margin-bottom: 12px; }
+   688→        .lp-cta-text { font-size: 1.1rem; opacity: 0.9; margin-bottom: 32px; max-width: 500px; margin-left: auto; margin-right: auto; line-height: 1.7; }
+   689→        .lp-cta-buttons { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+   690→
+   691→        /* === FOOTER === */
+   692→        .lp-footer { background: #0f172a; color: #94a3b8; text-align: center; padding: 40px 20px; font-size: 0.85rem; }
+   693→        .lp-footer-brand { color: #006EE3; font-weight: 700; }
+   694→        .lp-footer a { color: #006EE3; }
+   695→        .lp-footer a:hover { text-decoration: underline; }
+   696→        .lp-footer-links { display: flex; gap: 20px; justify-content: center; margin-top: 12px; }
+   697→        .lp-footer-copy { margin-top: 20px; font-size: 0.78rem; color: #475569; }
+   698→
+   699→        /* === MOBILE CTA BAR === */
+   700→        .lp-mobile-cta {
+   701→            position: fixed; bottom: 0; left: 0; right: 0; z-index: 100;
+   702→            background: #fff; border-top: 1px solid #e5e7eb;
+   703→            padding: 12px 20px; display: none; gap: 10px;
+   704→        }
+   705→        .lp-mobile-cta a {
+   706→            flex: 1; text-align: center; padding: 12px;
+   707→            border-radius: 10px; font-size: 0.85rem; font-weight: 700;
+   708→            display: flex; align-items: center; justify-content: center; gap: 6px;
+   709→        }
+   710→        .lp-mobile-cta .wa-btn { background: #25d366; color: #fff; }
+   711→        .lp-mobile-cta .call-btn { background: #006EE3; color: #fff; }
+   712→        @media (max-width: 768px) {
+   713→            .lp-mobile-cta { display: flex; }
+   714→            .lp-section { padding: 60px 16px; }
+   715→            .lp-cta { padding-bottom: 80px; }
+   716→            .lp-fab { bottom: 80px; }
+   717→            .lp-hero-stats { gap: 16px; }
+   718→        }
+   719→
+   720→        /* === Floating WhatsApp FAB === */
+   721→        .lp-fab {
+   722→            position: fixed; bottom: 28px; right: 28px; z-index: 200;
+   723→            width: 60px; height: 60px; border-radius: 50%;
+   724→            background: #25d366; color: #fff; border: none; cursor: pointer;
+   725→            display: flex; align-items: center; justify-content: center;
+   726→            font-size: 1.8rem; box-shadow: 0 4px 20px rgba(37,211,102,0.4);
+   727→            transition: transform 0.3s, box-shadow 0.3s;
+   728→            animation: fabPulse 2s ease-in-out infinite;
+   729→        }
+   730→        .lp-fab:hover { transform: scale(1.1); box-shadow: 0 6px 28px rgba(37,211,102,0.5); }
+   731→        .lp-fab-tooltip {
+   732→            position: absolute; right: 72px; top: 50%; transform: translateY(-50%);
+   733→            background: #fff; color: #0f172a; padding: 8px 14px; border-radius: 10px;
+   734→            font-size: 0.82rem; font-weight: 600; white-space: nowrap;
+   735→            box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+   736→            opacity: 0; pointer-events: none; transition: opacity 0.2s;
+   737→        }
+   738→        .lp-fab-tooltip::after {
+   739→            content: ''; position: absolute; left: 100%; top: 50%; transform: translateY(-50%);
+   740→            border: 6px solid transparent; border-left-color: #fff;
+   741→        }
+   742→        .lp-fab:hover .lp-fab-tooltip { opacity: 1; }
+   743→        @keyframes fabPulse {
+   744→            0%, 100% { box-shadow: 0 4px 20px rgba(37,211,102,0.4); }
+   745→            50% { box-shadow: 0 4px 30px rgba(37,211,102,0.6), 0 0 0 8px rgba(37,211,102,0.1); }
+   746→        }
+   747→
+   748→        /* === LIGHTBOX === */
+   749→        .lp-lightbox {
+   750→            display: none; position: fixed; inset: 0; z-index: 9999;
+   751→            background: rgba(0,0,0,0.92); align-items: center; justify-content: center;
+   752→            cursor: zoom-out; -webkit-tap-highlight-color: transparent;
+   753→        }
+   754→        .lp-lightbox.active { display: flex; }
+   755→        .lp-lightbox img {
+   756→            max-width: 92vw; max-height: 90vh; border-radius: 12px;
+   757→            object-fit: contain; box-shadow: 0 8px 40px rgba(0,0,0,0.5);
+   758→            cursor: default;
+   759→        }
+   760→        .lp-lightbox-close {
+   761→            position: absolute; top: 20px; right: 24px;
+   762→            background: rgba(255,255,255,0.15); border: none; color: #fff;
+   763→            width: 44px; height: 44px; border-radius: 50%; font-size: 1.4rem;
+   764→            cursor: pointer; display: flex; align-items: center; justify-content: center;
+   765→            transition: background 0.2s;
+   766→        }
+   767→        .lp-lightbox-close:hover { background: rgba(255,255,255,0.3); }
+   768→        .lp-lightbox-nav {
+   769→            position: absolute; top: 50%; transform: translateY(-50%);
+   770→            background: rgba(255,255,255,0.12); border: none; color: #fff;
+   771→            width: 48px; height: 48px; border-radius: 50%; font-size: 1.2rem;
+   772→            cursor: pointer; display: flex; align-items: center; justify-content: center;
+   773→            transition: background 0.2s;
+   774→        }
+   775→        .lp-lightbox-nav:hover { background: rgba(255,255,255,0.3); }
+   776→        .lp-lightbox-prev { left: 16px; }
+   777→        .lp-lightbox-next { right: 16px; }
+   778→        .lp-lightbox-counter {
+   779→            position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+   780→            color: rgba(255,255,255,0.7); font-size: 0.85rem; font-weight: 500;
+   781→        }
+   782→    </style>
+   783→</head>
+   784→<body>
+   785→<!-- Google Tag Manager (noscript) -->
+   786→<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-TMH9V9QQ"
+   787→height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+   788→<!-- End Google Tag Manager (noscript) -->
+   789→
+   790→<!-- NAV -->
+   791→<nav class="lp-nav" id="lpNav">
+   792→    <a href="${baseUrl}/" class="lp-nav-brand">
+   793→        <img src="/images/favicon.jpeg" alt="En Santiago" style="height:32px;width:auto;border-radius:6px;margin-right:6px;"> En Santiago
+   794→    </a>
+   795→    <div class="lp-nav-links">
+   796→        <a href="#about">Nosotros</a>
+   797→        <a href="#services">Servicios</a>
+   798→        ${products.results.length > 0 ? '<a href="#products">Productos</a>' : ''}
+   799→        <a href="#faq">FAQ</a>
+   800→        <a href="#contact">Contacto</a>
+   801→        ${whatsappNumber ? `<a href="${whatsappLink}" target="_blank" rel="noopener" class="lp-nav-cta"><i class="fab fa-whatsapp"></i> WhatsApp</a>` : ''}
+   802→    </div>
+   803→</nav>
+   804→
+   805→<!-- HERO -->
+   806→<section class="lp-hero" id="hero">
+   807→    ${business.banner ? `
+   808→        <div class="lp-hero-banner" style="background-image:url('${escapeHtml(business.banner)}');"></div>
+   809→        <div class="lp-hero-overlay"></div>
+   810→        <div class="lp-hero-pattern"></div>
+   811→    ` : (business.cover_image ? '<div class="lp-hero-bg"></div><div class="lp-hero-pattern"></div>' : '<div class="lp-hero-pattern"></div>')}
+   812→    <div class="lp-hero-content">
+   813→        ${business.logo ? `<img src="${escapeHtml(business.logo)}" alt="${escapeHtml(title)}" class="lp-hero-logo">` : ''}
+   814→        <div class="lp-hero-badge">
+   815→            <i class="fas fa-map-marker-alt"></i>
+   816→            ${escapeHtml(business.city || '')}${business.state ? ', ' + escapeHtml(business.state) : ''}
+   817→            ${business.category_name ? ' &middot; ' + escapeHtml(business.category_name) : ''}
+   818→        </div>
+   819→        <h1 class="lp-hero-title">${escapeHtml(aiContent.heroTagline)}</h1>
+   820→        <p class="lp-hero-subtitle">${escapeHtml(aiContent.heroSubtitle)}</p>
+   821→        <div class="lp-hero-actions">
+   822→            ${whatsappNumber ? `<a href="${whatsappLink}" target="_blank" rel="noopener" class="lp-btn lp-btn-whatsapp"><i class="fab fa-whatsapp"></i> Contactar por WhatsApp</a>` : ''}
+   823→            ${phoneClean ? `<a href="tel:${phoneClean}" class="lp-btn lp-btn-phone"><i class="fas fa-phone"></i> ${escapeHtml(business.phone || '')}</a>` : ''}
+   824→        </div>
+   825→        <div class="lp-hero-stats">
+   826→            ${business.category_name ? `<div class="lp-hero-stat"><div class="lp-hero-stat-value">${escapeHtml(business.category_name)}</div><div class="lp-hero-stat-label">Categoria</div></div>` : ''}
+   827→            ${business.product_count > 0 ? `<div class="lp-hero-stat"><div class="lp-hero-stat-value">${business.product_count}</div><div class="lp-hero-stat-label">Productos</div></div>` : ''}
+   828→            ${business.image_count > 1 ? `<div class="lp-hero-stat"><div class="lp-hero-stat-value">${business.image_count}</div><div class="lp-hero-stat-label">Fotos</div></div>` : ''}
+   829→            <div class="lp-hero-stat"><div class="lp-hero-stat-value">${business.city || 'Santiago de Chile'}</div><div class="lp-hero-stat-label">Ubicacion</div></div>
+   830→        </div>
+   831→    </div>
+   832→</section>
+   833→
+   834→<!-- ABOUT / QUIENES SOMOS -->
+   835→<section class="lp-section ${fullDescription ? '' : 'lp-section-grey'}" id="about">
+   836→    <div class="lp-container">
+   837→        <div class="lp-section-header">
+   838→            ${business.logo ? `<img src="${escapeHtml(business.logo)}" alt="${escapeHtml(title)}" style="max-height:80px;max-width:200px;width:auto;border-radius:12px;object-fit:contain;margin-bottom:16px;box-shadow:0 4px 16px rgba(0,0,0,0.08);">` : ''}
+   839→            <div class="lp-section-label">Quienes Somos</div>
+   840→            <h2 class="lp-section-title">Conoce ${escapeHtml(title)}</h2>
+   841→            <p class="lp-section-desc">${fullDescription ? escapeHtml(fullDescription.substring(0, 120)) + '...' : 'Nos dedicamos a ofrecer los mejores servicios en ' + (business.city || 'Santiago de Chile') + '.'}</p>
+   842→        </div>
+   843→        ${fullDescription && business.cover_image ? `
+   844→        <div class="lp-about-grid">
+   845→            <div>
+   846→                <p class="lp-about-text">${escapeHtml(fullDescription)}</p>
+   847→                <div class="lp-about-highlights">
+   848→                    ${business.category_name ? `<div class="lp-about-highlight"><i class="fas fa-check"></i> Especialistas en ${escapeHtml(business.category_name.toLowerCase())}</div>` : ''}
+   849→                    ${business.city ? `<div class="lp-about-highlight"><i class="fas fa-check"></i> Ubicados en ${escapeHtml(business.city + (business.state ? ', ' + business.state : ''))}</div>` : ''}
+   850→                    ${whatsappNumber ? `<div class="lp-about-highlight"><i class="fas fa-check"></i> Atencion inmediata por WhatsApp</div>` : ''}
+   851→                    ${business.schedule ? `<div class="lp-about-highlight"><i class="fas fa-check"></i> Horario: ${escapeHtml(business.schedule)}</div>` : ''}
+   852→                </div>
+   853→            </div>
+   854→            <img src="${escapeHtml(business.cover_image)}" alt="${escapeHtml(title)}" class="lp-about-image" loading="lazy">
+   855→        </div>
+   856→        ` : `
+   857→        <div class="lp-about-grid" style="max-width:700px;margin:0 auto;">
+   858→            <div>
+   859→                <p class="lp-about-text">${escapeHtml(aiContent.aboutText)}</p>
+   860→                <div class="lp-about-highlights">
+   861→                    ${business.category_name ? `<div class="lp-about-highlight"><i class="fas fa-check"></i> Especialistas en ${escapeHtml(business.category_name.toLowerCase())}</div>` : ''}
+   862→                    ${business.city ? `<div class="lp-about-highlight"><i class="fas fa-check"></i> Ubicados en ${escapeHtml(business.city + (business.state ? ', ' + business.state : ''))}</div>` : ''}
+   863→                    ${whatsappNumber ? `<div class="lp-about-highlight"><i class="fas fa-check"></i> Atencion inmediata por WhatsApp</div>` : ''}
+   864→                    ${business.has_delivery ? `<div class="lp-about-highlight"><i class="fas fa-check"></i> Servicio de delivery disponible</div>` : ''}
+   865→                </div>
+   866→            </div>
+   867→        </div>
+   868→        `}
+   869→    </div>
+   870→</section>
+   871→
+   872→<!-- SERVICES / QUE OFRECEMOS -->
+   873→${services.length > 0 ? `
+   874→<section class="lp-section lp-section-grey" id="services">
+   875→    <div class="lp-container">
+   876→        <div class="lp-section-header">
+   877→            <div class="lp-section-label">Nuestros Servicios</div>
+   878→            <h2 class="lp-section-title">Que Ofrecemos</h2>
+   879→            <p class="lp-section-desc">Conoce todo lo que ${escapeHtml(title)} tiene para ofrecerte.</p>
+   880→        </div>
+   881→        <div class="lp-services-grid">
+   882→            ${services.map(s => `
+   883→                <div class="lp-service-card">
+   884→                    <div class="lp-service-icon ${s.color}"><i class="${s.icon}"></i></div>
+   885→                    <div class="lp-service-title">${escapeHtml(s.title)}</div>
+   886→                    <div class="lp-service-desc">${escapeHtml(s.desc)}</div>
+   887→                </div>
+   888→            `).join('')}
+   889→        </div>
+   890→    </div>
+   891→</section>
+   892→` : ''}
+   893→
+   894→<!-- WHY US / POR QUE ELEGIRNOS -->
+   895→<section class="lp-section">
+   896→    <div class="lp-container">
+   897→        <div class="lp-section-header">
+   898→            <div class="lp-section-label">Por Que Elegirnos</div>
+   899→            <h2 class="lp-section-title">${escapeHtml(aiContent.whyChooseText)}</h2>
+   900→        </div>
+   901→        <div class="lp-why-grid">
+   902→            ${whyUs.slice(0, 6).map(w => `
+   903→                <div class="lp-why-card">
+   904→                    <div class="lp-why-icon"><i class="${w.icon}"></i></div>
+   905→                    <div>
+   906→                        <div class="lp-why-title">${escapeHtml(w.title)}</div>
+   907→                        <div class="lp-why-desc">${escapeHtml(w.desc)}</div>
+   908→                    </div>
+   909→                </div>
+   910→            `).join('')}
+   911→        </div>
+   912→    </div>
+   913→</section>
+   914→
+   915→<!-- PRODUCTS -->
+   916→${products.results.length > 0 ? `
+   917→<section class="lp-section lp-section-grey" id="products">
+   918→    <div class="lp-container">
+   919→        <div class="lp-section-header">
+   920→            <div class="lp-section-label">Productos</div>
+   921→            <h2 class="lp-section-title">Nuestros Productos</h2>
+   922→            <p class="lp-section-desc">Explora nuestro catalogo de productos disponibles.</p>
+   923→        </div>
+   924→        <div class="lp-products-grid">
+   925→            ${products.results.map(p => `
+   926→                <div class="lp-product-card">
+   927→                    <a href="${p.slug ? `${baseUrl}/producto/${p.slug}` : '#'}" class="lp-product-link"${p.slug ? ' target="_blank" rel="noopener"' : ''}>
+   928→                    ${(() => { let imgs = []; if (p.image) { try { const arr = JSON.parse(p.image); if (Array.isArray(arr)) imgs = arr.filter(u => u); else if (typeof p.image === 'string' && p.image.startsWith('http')) imgs = [p.image]; } catch(e) { if (p.image.startsWith('http')) imgs = [p.image]; } } const imgSrc = imgs[0] || ''; const dataImgs = imgs.length > 1 ? ` data-imgs='${JSON.stringify(imgs)}'` : (imgSrc ? ` data-imgs='["${imgSrc.replace(/'/g, "\\'")}"]'` : ''); return imgSrc ? `<img src="${escapeHtml(imgSrc)}" alt="${escapeHtml(p.name)} - ${escapeHtml(title)}" class="lp-product-img" loading="lazy" style="cursor:zoom-in;" onerror="this.style.display='none'" onclick="event.preventDefault();event.stopPropagation();openLpLightbox(this)"${dataImgs}>` : '<div style="height:220px;background:#f1f5f9;display:flex;align-items:center;justify-content:center;"><i class="fas fa-image" style="font-size:2.5rem;color:#cbd5e1;"></i></div>'; })()}
+   929→                    <div class="lp-product-body">
+   930→                        <div class="lp-product-name">${escapeHtml(p.name)}</div>
+   931→                        ${p.description ? `<div class="lp-product-desc">${escapeHtml(p.description)}</div>` : ''}
+   932→                        ${p.price ? `<div class="lp-product-price">${escapeHtml(String(p.price))}</div>` : ''}
+   933→                    </div>
+   934→                    </a>
+   935→                    ${whatsappNumber ? `<div class="lp-product-footer"><a href="${whatsappLink}" target="_blank" rel="noopener" class="lp-product-wa"><i class="fab fa-whatsapp"></i> Consultar</a></div>` : ''}
+   936→                </div>
+   937→            `).join('')}
+   938→        </div>
+   939→    </div>
+   940→</section>
+   941→` : ''}
+   942→
+   943→<!-- INFO -->
+   944→<section class="lp-section" id="info">
+   945→    <div class="lp-container">
+   946→        <div class="lp-section-header">
+   947→            <div class="lp-section-label">Informacion</div>
+   948→            <h2 class="lp-section-title">Datos del Negocio</h2>
+   949→        </div>
+   950→        <div class="lp-info-grid">
+   951→            <div class="lp-info-card">
+   952→                <div class="lp-info-icon green"><i class="fas fa-map-marker-alt"></i></div>
+   953→                <div>
+   954→                    <div class="lp-info-card-label">Direccion</div>
+   955→                    <div class="lp-info-card-value">${escapeHtml(business.address || business.city || 'No disponible')}</div>
+   956→                </div>
+   957→            </div>
+   958→            ${business.category_name ? `
+   959→            <div class="lp-info-card">
+   960→                <div class="lp-info-icon blue"><i class="fas fa-tag"></i></div>
+   961→                <div>
+   962→                    <div class="lp-info-card-label">Categoria</div>
+   963→                    <div class="lp-info-card-value">${escapeHtml(business.category_name)}</div>
+   964→                </div>
+   965→            </div>` : ''}
+   966→            ${business.phone ? `
+   967→            <div class="lp-info-card">
+   968→                <div class="lp-info-icon amber"><i class="fas fa-phone"></i></div>
+   969→                <div>
+   970→                    <div class="lp-info-card-label">Telefono</div>
+   971→                    <div class="lp-info-card-value"><a href="tel:${phoneClean}">${escapeHtml(business.phone)}</a></div>
+   972→                </div>
+   973→            </div>` : ''}
+   974→            ${business.whatsapp ? `
+   975→            <div class="lp-info-card">
+   976→                <div class="lp-info-icon green"><i class="fab fa-whatsapp"></i></div>
+   977→                <div>
+   978→                    <div class="lp-info-card-label">WhatsApp</div>
+   979→                    <div class="lp-info-card-value"><a href="${whatsappLink}" target="_blank" rel="noopener">${escapeHtml(business.whatsapp)}</a></div>
+   980→                </div>
+   981→            </div>` : ''}
+   982→            ${business.schedule ? `
+   983→            <div class="lp-info-card">
+   984→                <div class="lp-info-icon purple"><i class="fas fa-clock"></i></div>
+   985→                <div>
+   986→                    <div class="lp-info-card-label">Horario</div>
+   987→                    <div class="lp-info-card-value">${escapeHtml(business.schedule)}</div>
+   988→                </div>
+   989→            </div>` : ''}
+   990→            ${business.email || business.email_contact ? `
+   991→            <div class="lp-info-card">
+   992→                <div class="lp-info-icon red"><i class="fas fa-envelope"></i></div>
+   993→                <div>
+   994→                    <div class="lp-info-card-label">Email</div>
+   995→                    <div class="lp-info-card-value"><a href="mailto:${escapeHtml(business.email_contact || business.email)}">${escapeHtml(business.email_contact || business.email)}</a></div>
+   996→                </div>
+   997→            </div>` : ''}
+   998→            ${business.website ? `
+   999→            <div class="lp-info-card">
+  1000→                <div class="lp-info-icon pink"><i class="fas fa-globe"></i></div>
+  1001→                <div>
+  1002→                    <div class="lp-info-card-label">Sitio Web</div>
+  1003→                    <div class="lp-info-card-value"><a href="${escapeHtml(business.website)}" target="_blank" rel="noopener">${escapeHtml(business.website.replace(/^https?:\/\//, ''))}</a></div>
+  1004→                </div>
+  1005→            </div>` : ''}
+  1006→        </div>
+  1007→    </div>
+  1008→</section>
+  1009→
+  1010→<!-- GALLERY -->
+  1011→${images.results.length > 1 ? `
+  1012→<section class="lp-section lp-section-grey" id="gallery">
+  1013→    <div class="lp-container">
+  1014→        <div class="lp-section-header">
+  1015→            <div class="lp-section-label">Galeria</div>
+  1016→            <h2 class="lp-section-title">Nuestras Fotos</h2>
+  1017→        </div>
+  1018→        <div class="lp-gallery-grid" data-gallery='${JSON.stringify(images.results.map(i => i.url))}'>
+  1019→            ${(() => { const galleryLabels = ['fachada del local','interior del negocio','nuestros productos','area de atencion','detalles del establecimiento','ambiente general','nuestro equipo','vista externa','instalaciones','galeria adicional']; return images.results.map((img, i) => `<img src="${escapeHtml(img.url)}" alt="${escapeHtml(title)} - ${galleryLabels[i % galleryLabels.length]} en ${escapeHtml(business.city || 'Santiago de Chile')}" class="lp-gallery-img" loading="lazy" style="cursor:zoom-in;" onclick="openLpLightbox(this, this.closest('[data-gallery]'))">`).join(''); })()}
+  1020→        </div>
+  1021→    </div>
+  1022→</section>
+  1023→` : ''}
+  1024→
+  1025→<!-- FAQ -->
+  1026→<section class="lp-section" id="faq">
+  1027→    <div class="lp-container">
+  1028→        <div class="lp-section-header">
+  1029→            <div class="lp-section-label">Preguntas Frecuentes</div>
+  1030→            <h2 class="lp-section-title">FAQ</h2>
+  1031→            <p class="lp-section-desc">Las preguntas mas comunes sobre ${escapeHtml(title)}.</p>
+  1032→        </div>
+  1033→        <div class="lp-faq-list">
+  1034→            ${faqs.slice(0, 6).map((f, i) => `
+  1035→                <div class="lp-faq-item${i === 0 ? ' open' : ''}" onclick="this.classList.toggle('open')">
+  1036→                    <div class="lp-faq-q">${escapeHtml(f.q)} <i class="fas fa-chevron-down"></i></div>
+  1037→                    <div class="lp-faq-a">${escapeHtml(f.a)}</div>
+  1038→                </div>
+  1039→            `).join('')}
+  1040→        </div>
+  1041→    </div>
+  1042→</section>
+  1043→
+  1044→<!-- SOCIAL -->
+  1045→${(socialUrls.instagram || socialUrls.facebook || socialUrls.twitter || socialUrls.tiktok || socialUrls.youtube || business.slug) ? `
+  1046→<section class="lp-section lp-section-grey">
+  1047→    <div class="lp-container">
+  1048→        <div class="lp-section-header">
+  1049→            <div class="lp-section-label">Siguenos</div>
+  1050→            <h2 class="lp-section-title">Nuestras Redes Sociales</h2>
+  1051→        </div>
+  1052→        <div class="lp-social-grid">
+  1053→            ${business.slug ? `<a href="${baseUrl}/${bizTipo}/${bizCat}/${escapeHtml(business.slug)}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:12px;padding:19px 35px;border-radius:20px;background:linear-gradient(135deg,#006EE3,#0ea5e9);color:#fff;text-decoration:none;font-weight:700;font-size:1.5rem;"><i class="fas fa-store" style="font-size:1.75rem;"></i> Ficha del Negocio</a>` : ''}
+  1054→            ${socialUrls.instagram ? `<a href="${escapeHtml(socialUrls.instagram)}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:12px;padding:19px 35px;border-radius:20px;background:linear-gradient(135deg,#833ab4,#fd1d1d,#fcb045);color:#fff;text-decoration:none;font-weight:700;font-size:1.5rem;"><i class="fab fa-instagram" style="font-size:1.75rem;"></i> Instagram</a>` : ''}
+  1055→            ${socialUrls.facebook ? `<a href="${escapeHtml(socialUrls.facebook)}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:12px;padding:19px 35px;border-radius:20px;background:#1877f2;color:#fff;text-decoration:none;font-weight:700;font-size:1.5rem;"><i class="fab fa-facebook-f" style="font-size:1.75rem;"></i> Facebook</a>` : ''}
+  1056→            ${socialUrls.twitter ? `<a href="${escapeHtml(socialUrls.twitter)}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:12px;padding:19px 35px;border-radius:20px;background:#000;color:#fff;text-decoration:none;font-weight:700;font-size:1.5rem;"><i class="fab fa-x-twitter" style="font-size:1.75rem;"></i> X (Twitter)</a>` : ''}
+  1057→            ${socialUrls.tiktok ? `<a href="${escapeHtml(socialUrls.tiktok)}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:12px;padding:19px 35px;border-radius:20px;background:#010101;color:#fff;text-decoration:none;font-weight:700;font-size:1.5rem;"><i class="fab fa-tiktok" style="font-size:1.75rem;"></i> TikTok</a>` : ''}
+  1058→            ${socialUrls.youtube ? `<a href="${escapeHtml(socialUrls.youtube)}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:12px;padding:19px 35px;border-radius:20px;background:#ff0000;color:#fff;text-decoration:none;font-weight:700;font-size:1.5rem;"><i class="fab fa-youtube" style="font-size:1.75rem;"></i> YouTube</a>` : ''}
+  1059→        </div>
+  1060→    </div>
+  1061→</section>
+  1062→` : ''}
+  1063→
+  1064→<!-- VIDEO -->
+  1065→${(() => {
+  1066→    const raw = business.video_url;
+  1067→    if (!raw) return '';
+  1068→    let urls = [];
+  1069→    if (raw.startsWith('[')) { try { urls = JSON.parse(raw); } catch(e) { urls = [raw]; } }
+  1070→    else { urls = [raw]; }
+  1071→    urls = urls.filter(u => u);
+  1072→    if (!urls.length) return '';
+  1073→    return `
+  1074→<section class="lp-section" id="videos">
+  1075→    <div class="lp-container" style="text-align:center;">
+  1076→        <div class="lp-section-header">
+  1077→            <div class="lp-section-label">Video${urls.length > 1 ? 's' : ''}</div>
+  1078→            <h2 class="lp-section-title">Conoce Nuestro Trabajo</h2>
+  1079→        </div>
+  1080→        <div style="${urls.length > 1 ? 'display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px;' : 'max-width:320px;margin:0 auto;'}">
+  1081→            ${urls.map(u => getVideoEmbed(u)).join('')}
+  1082→        </div>
+  1083→    </div>
+  1084→</section>`;
+  1085→})()}
+  1086→
+  1087→<!-- MAP -->
+  1088→${(business.lat || business.latitude || business.address) ? `
+  1089→<section class="lp-section" id="location">
+  1090→    <div class="lp-container">
+  1091→        <div class="lp-section-header">
+  1092→            <div class="lp-section-label">Ubicacion</div>
+  1093→            <h2 class="lp-section-title">Como Llegar</h2>
+  1094→        </div>
+  1095→        <div class="lp-map-container">
+  1096→            <iframe
+  1097→                src="https://www.google.com/maps/embed/v1/place?key=AIzaSyBFw0Qbyq9zTFTd-tUY6dZWTgaQzuU17R8&q=${mapQuery}&zoom=15"
+  1098→                allowfullscreen loading="lazy"
+  1099→                referrerpolicy="no-referrer-when-downgrade">
+  1100→            </iframe>
+  1101→        </div>
+  1102→    </div>
+  1103→</section>
+  1104→` : ''}
+  1105→
+  1106→<!-- CTA -->
+  1107→<section class="lp-section lp-cta" id="contact">
+  1108→    <div class="lp-container">
+  1109→        <h2 class="lp-cta-title">Quieres contactar a ${escapeHtml(title)}?</h2>
+  1110→        <p class="lp-cta-text">Escribenos ahora por WhatsApp o llamanos directamente. Te respondemos rapido.</p>
+  1111→        <div class="lp-cta-buttons">
+  1112→            ${whatsappNumber ? `<a href="${whatsappLink}" target="_blank" rel="noopener" class="lp-btn lp-btn-whatsapp"><i class="fab fa-whatsapp"></i> WhatsApp</a>` : ''}
+  1113→            ${phoneClean ? `<a href="tel:${phoneClean}" class="lp-btn lp-btn-outline" style="border-color:#fff;color:#fff;"><i class="fas fa-phone"></i> Llamar</a>` : ''}
+  1114→        </div>
+  1115→    </div>
+  1116→</section>
+  1117→
+  1118→<!-- FOOTER -->
+  1119→<footer class="lp-footer">
+  1120→    <p>La pagina web de <span class="lp-footer-brand">${escapeHtml(title)}</span> esta disponible gracias a <a href="https://coporo.pages.dev/" target="_blank" rel="noopener noreferrer">Grupo 360</a></p>
+  1121→    <div class="lp-footer-links">
+  1122→        <a href="${baseUrl}/${bizTipo}/${bizCat}/${business.slug}" target="_blank">Ver en En Santiago</a>
+  1123→        ${socialUrls.instagram ? `<a href="${escapeHtml(socialUrls.instagram)}" target="_blank" rel="noopener"><i class="fab fa-instagram"></i> Instagram</a>` : ''}
+  1124→        ${socialUrls.facebook ? `<a href="${escapeHtml(socialUrls.facebook)}" target="_blank" rel="noopener"><i class="fab fa-facebook"></i> Facebook</a>` : ''}
+  1125→    </div>
+  1126→    <div class="lp-footer-copy">&copy; ${new Date().getFullYear()} ${escapeHtml(title)}. Todos los derechos reservados.</div>
+  1127→    <div class="lp-footer-links">
+  1128→        <a href="https://maps.app.goo.gl/Jz2QTADrNNneQtGd9" target="_blank" rel="noopener noreferrer">Página web desarrollada por Grupo 360 Soluciones</a>
+  1129→        <a href="http://coporo.pages.dev/" target="_blank" rel="noopener noreferrer">Diseño de páginas webs - SEO Local -</a>
+  1130→    </div>
+  1131→</footer>
+  1132→
+  1133→<!-- MOBILE CTA BAR -->
+  1134→<div class="lp-mobile-cta">
+  1135→    ${whatsappNumber ? `<a href="${whatsappLink}" target="_blank" rel="noopener" class="wa-btn"><i class="fab fa-whatsapp"></i> WhatsApp</a>` : ''}
+  1136→    ${phoneClean ? `<a href="tel:${phoneClean}" class="call-btn"><i class="fas fa-phone"></i> Llamar</a>` : ''}
+  1137→</div>
+  1138→
+  1139→<!-- FLOATING WHATSAPP FAB -->
+  1140→${whatsappNumber ? `
+  1141→<a href="${whatsappLink}" target="_blank" rel="noopener" class="lp-fab" aria-label="Contactar por WhatsApp">
+  1142→    <i class="fab fa-whatsapp"></i>
+  1143→    <span class="lp-fab-tooltip">Escribenos por WhatsApp</span>
+  1144→</a>` : ''}
+  1145→
+  1146→<script>
+  1147→// Sticky nav shadow
+  1148→window.addEventListener('scroll', () => {
+  1149→    const nav = document.getElementById('lpNav');
+  1150→    if (nav) nav.classList.toggle('scrolled', window.scrollY > 50);
+  1151→});
+  1152→</script>
+  1153→<script>setTimeout(function(){fetch('/api/business-stats/track',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({business_id:${business.id},event_type:'view',source:'landing'})}).catch(function(){})},0);</script>
+  1154→
+  1155→<!-- LIGHTBOX -->
+  1156→<div class="lp-lightbox" id="lpLightbox" onclick="if(event.target===this)closeLpLightbox()">
+  1157→    <button class="lp-lightbox-close" onclick="closeLpLightbox()" aria-label="Cerrar"><i class="fas fa-times"></i></button>
+  1158→    <button class="lp-lightbox-nav lp-lightbox-prev" onclick="event.stopPropagation();navLpLightbox(-1)" aria-label="Anterior"><i class="fas fa-chevron-left"></i></button>
+  1159→    <img id="lpLightboxImg" src="" alt="">
+  1160→    <button class="lp-lightbox-nav lp-lightbox-next" onclick="event.stopPropagation();navLpLightbox(1)" aria-label="Siguiente"><i class="fas fa-chevron-right"></i></button>
+  1161→    <div class="lp-lightbox-counter" id="lpLightboxCounter"></div>
+  1162→</div>
+  1163→<script>
+  1164→(function(){
+  1165→    var currentImgs=[], currentIdx=0;
+  1166→    window.openLpLightbox=function(el, galleryEl){
+  1167→        var imgs=[];
+  1168→        if(el.dataset.imgs){try{imgs=JSON.parse(el.dataset.imgs);}catch(e){}}
+  1169→        if(!imgs.length && galleryEl && galleryEl.dataset.gallery){try{imgs=JSON.parse(galleryEl.dataset.gallery);}catch(e){}}
+  1170→        if(!imgs.length && el.src) imgs=[el.src];
+  1171→        if(!imgs.length) return;
+  1172→        currentImgs=imgs;
+  1173→        currentIdx=imgs.indexOf(el.src);
+  1174→        if(currentIdx<0) currentIdx=0;
+  1175→        showLpLightbox();
+  1176→    };
+  1177→    function showLpLightbox(){
+  1178→        var lb=document.getElementById('lpLightbox');
+  1179→        var img=document.getElementById('lpLightboxImg');
+  1180→        var ctr=document.getElementById('lpLightboxCounter');
+  1181→        img.src=currentImgs[currentIdx];
+  1182→        ctr.textContent=currentImgs.length>1?(currentIdx+1)+' / '+currentImgs.length:'';
+  1183→        lb.classList.add('active');
+  1184→        document.body.style.overflow='hidden';
+  1185→    }
+  1186→    window.closeLpLightbox=function(){
+  1187→        document.getElementById('lpLightbox').classList.remove('active');
+  1188→        document.body.style.overflow='';
+  1189→    };
+  1190→    window.navLpLightbox=function(dir){
+  1191→        if(currentImgs.length<2) return;
+  1192→        currentIdx=(currentIdx+dir+currentImgs.length)%currentImgs.length;
+  1193→        showLpLightbox();
+  1194→    };
+  1195→    document.addEventListener('keydown',function(e){
+  1196→        var lb=document.getElementById('lpLightbox');
+  1197→        if(!lb||!lb.classList.contains('active')) return;
+  1198→        if(e.key==='Escape') closeLpLightbox();
+  1199→        if(e.key==='ArrowLeft') navLpLightbox(-1);
+  1200→        if(e.key==='ArrowRight') navLpLightbox(1);
+  1201→    });
+  1202→})();
+  1203→</script>
+  1204→</body>
+  1205→</html>`;
+  1206→
+  1207→    return new Response(html, {
+  1208→      status: 200,
+  1209→      headers: {
+  1210→        'Content-Type': 'text/html; charset=utf-8',
+  1211→        'Cache-Control': 'public, max-age=300',
+  1212→        'Link': `<${baseUrl}/${bizTipo}/${bizCat}/${business.slug}>; rel="canonical"`,
+  1213→      },
+  1214→    });
+  1215→  } catch (error) {
+  1216→    return new Response('Error interno del servidor', {
+  1217→      status: 500,
+  1218→      headers: { 'Content-Type': 'text/plain' },
+  1219→    });
+  1220→  }
+  1221→}
+  1222→
+  1223→// Extract service highlights from description text
+  1224→function extractServices(description, business) {
+  1225→  const services = [];
+  1226→  const colors = ['green', 'blue', 'amber', 'purple', 'rose', 'teal'];
+  1227→  const icons = ['fas fa-star', 'fas fa-heart', 'fas fa-bolt', 'fas fa-gem', 'fas fa-trophy', 'fas fa-rocket'];
+  1228→  let ci = 0;
+  1229→
+  1230→  if (!description || description.length < 30) {
+  1231→    // Generate default services from business features
+  1232→    if (business.category_name) services.push({ icon: 'fas fa-tag', color: 'green', title: business.category_name, desc: `Servicios profesionales de ${business.category_name.toLowerCase()} con la mejor calidad y atencion al cliente.` });
+  1233→    if (business.has_delivery) services.push({ icon: 'fas fa-motorcycle', color: 'blue', title: 'Delivery', desc: 'Te llevamos nuestros productos directamente a tu puerta. Rapido y seguro.' });
+  1234→    if (business.has_parking) services.push({ icon: 'fas fa-car', color: 'amber', title: 'Estacionamiento', desc: 'Amplio parking disponible para tu comodidad al visitarnos.' });
+  1235→    if (business.has_wifi) services.push({ icon: 'fas fa-wifi', color: 'purple', title: 'WiFi Gratuito', desc: 'Conexión WiFi gratuita para nuestros clientes.' });
+  1236→    if (business.has_card) services.push({ icon: 'fas fa-credit-card', color: 'teal', title: 'Pagos con Tarjeta', desc: 'Aceptamos todas las tarjetas de credito y debito.' });
+  1237→    if (business.has_outdoor) services.push({ icon: 'fas fa-umbrella-beach', color: 'rose', title: 'Area Exterior', desc: 'Disfruta de un ambiente al aire libre en nuestras instalaciones.' });
+  1238→    if (services.length === 0) {
+  1239→      services.push({ icon: 'fas fa-handshake', color: 'green', title: 'Atencion Personalizada', desc: 'Nos comprometemos a brindarte la mejor atencion en cada visita.' });
+  1240→      services.push({ icon: 'fas fa-star', color: 'amber', title: 'Calidad Garantizada', desc: 'Trabajamos con los mejores estandares de calidad.' });
+  1241→      services.push({ icon: 'fas fa-clock', color: 'blue', title: 'Atencion Rapida', desc: 'Respondemos de forma agil a todas tus solicitudes.' });
+  1242→    }
+  1243→    return services;
+  1244→  }
+  1245→
+  1246→  // Split description into sentences and create service cards
+  1247→  const sentences = description.split(/[.\n]/).map(s => s.trim()).filter(s => s.length > 20);
+  1248→  const topSentences = sentences.slice(0, 6);
+  1249→
+  1250→  topSentences.forEach((sentence, i) => {
+  1251→    const title = sentence.length > 50 ? sentence.substring(0, 50) + '...' : sentence;
+  1252→    services.push({
+  1253→      icon: icons[ci % icons.length],
+  1254→      color: colors[ci % colors.length],
+  1255→      title: title,
+  1256→      desc: sentence.length > 80 ? sentence.substring(0, 80) + '...' : sentence
+  1257→    });
+  1258→    ci++;
+  1259→  });
+  1260→
+  1261→  // Ensure at least 3 services
+  1262→  if (services.length < 3) {
+  1263→    services.push({ icon: 'fas fa-handshake', color: 'green', title: 'Compromiso Total', desc: 'Nos dedicamos a ofrecer la mejor experiencia a cada cliente.' });
+  1264→  }
+  1265→  if (services.length < 3) {
+  1266→    services.push({ icon: 'fas fa-star', color: 'amber', title: 'Calidad Garantizada', desc: 'Trabajamos cada dia para mejorar nuestros servicios.' });
+  1267→  }
+  1268→
+  1269→  return services;
+  1270→}
+  1271→
+  1272→function escapeHtml(str) {
+  1273→  if (!str) return '';
+  1274→  return str
+  1275→    .replace(/&/g, '&amp;')
+  1276→    .replace(/</g, '&lt;')
+  1277→    .replace(/>/g, '&gt;')
+  1278→    .replace(/"/g, '&quot;')
+  1279→    .replace(/'/g, '&#39;');
+  1280→}
+  1281→
+  1282→function normalizeSocialUrl(value, platform) {
+  1283→  if (!value) return '';
+  1284→  const v = value.trim();
+  1285→  if (v.startsWith('http://') || v.startsWith('https://')) return v;
+  1286→  let clean = v.replace(/^@/, '');
+  1287→  // Strip common prefixes users type by mistake: "facebook.com/", "instagram.com/", "facebook/", etc.
+  1288→  clean = clean.replace(/^(facebook\.com\/?|www\.facebook\.com\/?|facebook\/)/i, '');
+  1289→  clean = clean.replace(/^(instagram\.com\/?|www\.instagram\.com\/?|instagram\/)/i, '');
+  1290→  clean = clean.replace(/^(x\.com\/?|twitter\.com\/?|www\.twitter\.com\/?|twitter\/)/i, '');
+  1291→  clean = clean.replace(/^(tiktok\.com\/?|www\.tiktok\.com\/?|tiktok\/)/i, '');
+  1292→  clean = clean.replace(/^(youtube\.com\/?|www\.youtube\.com\/?|youtube\/)/i, '');
+  1293→  clean = clean.replace(/^@/, ''); // Remove @ again if it appeared after stripping
+  1294→  switch (platform) {
+  1295→    case 'instagram': return `https://www.instagram.com/${clean}`;
+  1296→    case 'facebook': return `https://www.facebook.com/${clean}`;
+  1297→    case 'twitter': return `https://x.com/${clean}`;
+  1298→    case 'tiktok': return `https://www.tiktok.com/@${clean}`;
+  1299→    case 'youtube': return `https://www.youtube.com/@${clean}`;
+  1300→    default: return v;
+  1301→  }
+  1302→}
+  1303→
+  1304→function getVideoEmbed(url) {
+  1305→  if (!url) return '';
+  1306→  // Direct video files (R2 uploads): .mp4, .webm, .ogg, .mov — these are lightweight, load normally
+  1307→  if (/\.(mp4|webm|ogg|mov)(\?|$)/i.test(url)) {
+  1308→    return `<div style="border-radius:16px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.1);"><video src="${escapeHtml(url)}" controls playsinline preload="metadata" style="width:100%;border-radius:16px;background:#000;"></video></div>`;
+  1309→  }
+  1310→  // YouTube
+  1311→  const ytMatch = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]+)/);
+  1312→  if (ytMatch) return getThumbnailEmbed(`https://www.youtube.com/embed/${ytMatch[1]}`, `https://img.youtube.com/vi/${ytMatch[1]}/hqdefault.jpg`, 'Ver video en YouTube');
+  1313→  // YouTube Shorts
+  1314→  const ytShortsMatch = url.match(/youtube\.com\/shorts\/([a-zA-Z0-9_-]+)/);
+  1315→  if (ytShortsMatch) return getThumbnailEmbed(`https://www.youtube.com/embed/${ytShortsMatch[1]}`, `https://img.youtube.com/vi/${ytShortsMatch[1]}/hqdefault.jpg`, 'Ver video en YouTube');
+  1316→  // TikTok
+  1317→  const ttMatch = url.match(/tiktok\.com\/@[^/]+\/video\/(\d+)/);
+  1318→  if (ttMatch) return getLazyIframe(`https://www.tiktok.com/embed/v2/${ttMatch[1]}`, 'Ver video en TikTok');
+  1319→  // Generic iframe
+  1320→  return getLazyIframe(url, 'Reproducir video');
+  1321→}
+  1322→
+  1323→function getThumbnailEmbed(iframeSrc, thumbSrc, label) {
+  1324→  const id = 'vid_' + Math.random().toString(36).substring(2, 9);
+  1325→  return `<div id="${id}" data-src="${escapeHtml(iframeSrc)}" onclick="this.innerHTML='<iframe src=\\'' + this.dataset.src + '\\' style=\\'width:100%;aspect-ratio:9/16;border:none;border-radius:16px;\\' allowfullscreen></iframe>';this.style.cursor='default';" style="border-radius:16px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.1);aspect-ratio:9/16;background:#000;cursor:pointer;position:relative;">
+  1326→    <img src="${escapeHtml(thumbSrc)}" alt="${escapeHtml(label)}" style="width:100%;height:100%;object-fit:cover;border-radius:16px;">
+  1327→    <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.25);transition:background 0.2s;" onmouseover="this.style.background='rgba(0,0,0,0.4)'" onmouseout="this.style.background='rgba(0,0,0,0.25)'">
+  1328→        <div style="width:64px;height:64px;border-radius:50%;background:rgba(255,255,255,0.9);display:flex;align-items:center;justify-content:center;box-shadow:0 4px 20px rgba(0,0,0,0.3);"><i class="fas fa-play" style="font-size:1.5rem;color:#0f172a;margin-left:4px;"></i></div>
+  1329→    </div>
+  1330→    <div style="position:absolute;bottom:12px;left:50%;transform:translateX(-50%);color:#fff;font-size:0.82rem;font-weight:600;text-shadow:0 1px 4px rgba(0,0,0,0.5);">${escapeHtml(label)}</div>
+  1331→</div>`;
+  1332→}
+  1333→
+  1334→function getLazyIframe(src, label) {
+  1335→  const id = 'vid_' + Math.random().toString(36).substring(2, 9);
+  1336→  return `<div id="${id}" onclick="this.innerHTML='<iframe src=\\'' + this.dataset.src + '\\' style=\\'width:100%;aspect-ratio:9/16;border:none;border-radius:16px;\\' allowfullscreen></iframe>';this.style.cursor='default';" data-src="${escapeHtml(src)}" style="border-radius:16px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.1);aspect-ratio:9/16;background:#0f172a;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:opacity 0.2s;">
+  1337→    <div style="text-align:center;color:#fff;"><div style="width:64px;height:64px;border-radius:50%;background:rgba(255,255,255,0.15);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;margin:0 auto 12px;"><i class="fas fa-play" style="font-size:1.5rem;margin-left:4px;"></i></div><div style="font-size:0.85rem;font-weight:600;opacity:0.8;">${escapeHtml(label)}</div></div>
+  1338→  </div>`;
+  1339→}
+  1340→

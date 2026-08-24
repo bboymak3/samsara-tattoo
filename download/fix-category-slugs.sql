@@ -8,158 +8,132 @@
 --   enlaces de negocios que dependen de category_slug por JOIN.
 --
 --   Ejemplo real:
---     name = 'Tapizar IA'           (nombre nuevo)
---     slug = 'tapizados-de-volantes' (slug viejo, NO coincide)
---
---   El frontend /categoria/tapizados-de-volantes seguia cargando
---   (porque el slug viejo seguia en la DB) pero mostraba el nombre
---   nuevo. El nuevo enlace /categoria/tapizar-ia devolvia 404.
+--     name = 'Tapizar IA'                (nombre nuevo)
+--     slug = 'tapizados-de-volantes'     (slug viejo, NO coincide)
 --
 -- SOLUCION:
---   Este script recalcula el slug de TODAS las categorias activas
---   a partir de su `name` actual, aplicando la misma logica de
---   slugify que usa el backend. En caso de colision, se le agrega
---   un sufijo -2, -3, etc.
+--   Recalcula el slug de TODAS las categorias activas a partir de su
+--   `name` actual. En caso de colision, se le agrega un sufijo -1, -2, etc.
 --
 -- USO (Cloudflare D1):
---   wrangler d1 execute en-santiago-db --remote --file=scripts/fixes/fix-category-slugs.sql
+--   wrangler d1 execute <TU_BINDING_D1> --remote --file=scripts/fixes/fix-category-slugs.sql
 --
---   (cambia en-santiago-db por el nombre real de tu binding D1,
---    revisalo en wrangler.toml)
+--   (reemplaza <TU_BINDING_D1> por el nombre real de tu binding D1,
+--    definido en wrangler.toml bajo [[d1_databases]])
 --
 -- NOTAS:
---   - Es seguro ejecutarlo multiples veces (idempotente).
+--   - Idempotente: puede ejecutarse multiples veces sin danos.
 --   - Solo actualiza filas donde el slug actual NO coincide con el
 --     slug esperado.
---   - NO borra datos, solo actualiza la columna `slug`.
+--   - NO borra datos; solo actualiza la columna `slug`.
+--   - Cada UPDATE hace UN solo REPLACE (mucho mas legible y robusto
+--     que 19 REPLACEs anidados).
 -- ──────────────────────────────────────────────────────────────────────────
 
--- 1) Generar una tabla temporal con el slug esperado por cada categoria.
---    SQLite no tiene funcion slugify nativa, asi que hacemos un LOWER +
---    trim basico. La normalizacion de acentos se hace en dos pasadas
---    con REPLACE (limitado a los mas comunes en espanol).
+-- 1) Crear tabla temporal con copia del nombre original.
 CREATE TEMP TABLE IF NOT EXISTS _cat_slug_fix AS
-SELECT
-  id,
-  name,
-  slug AS current_slug,
-  LOWER(
-    REPLACE(
-      REPLACE(
-        REPLACE(
-          REPLACE(
-            REPLACE(
-              REPLACE(
-                REPLACE(
-                  REPLACE(
-                    REPLACE(
-                      REPLACE(
-                        REPLACE(
-                          REPLACE(
-                            REPLACE(
-                              REPLACE(
-                                REPLACE(
-                                  REPLACE(name, 'á','a'),
-                                'é','e'),
-                              'í','i'),
-                            'ó','o'),
-                          'ú','u'),
-                        'ñ','n'),
-                      'Á','a'),
-                    'É','e'),
-                  'Í','i'),
-                'Ó','o'),
-              'Ú','u'),
-            'Ñ','n'),
-          'ü','u'),
-        'Ü','u'),
-      ' ','-')
-    )
-  ) AS expected_slug_raw
+SELECT id, name, slug AS current_slug, LOWER(name) AS expected_slug
 FROM categories
 WHERE is_active = 1;
 
--- 2) Limpiar caracteres no alfanumericos (excepto guion).
---    Como SQLite no soporta regex replace, lo hacemos con REPLACE en cadena
---    para los caracteres mas comunes que aparecen en nombres de categorias.
-UPDATE _cat_slug_fix
-SET expected_slug_raw =
-  REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
-    REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
-      REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
-        REPLACE(REPLACE(REPLACE(REPLACE(expected_slug_raw,
-          '.',''), ',',''), ';',''), ':',''), '(',''), ')',''),
-          '[',''), ']',''), '{',''), '}',''),
-          '"',''), '''',''), '¡',''), '¿',''), '!',''),
-          '?',''), '&','y'), '/','-'), '\\','-'), '@',''),
-          '#',''), '$',''), '%',''), '*',''), '+',''),
-          '=',''), '<',''), '>',''), '|',''), '~',''),
-          '`',''), '^',''), '°',''), '--','-')
-;
+-- 2) Normalizar acentos y ñ (cada UPDATE hace un REPLACE).
+UPDATE _cat_slug_fix SET expected_slug = REPLACE(expected_slug, 'á', 'a');
+UPDATE _cat_slug_fix SET expected_slug = REPLACE(expected_slug, 'é', 'e');
+UPDATE _cat_slug_fix SET expected_slug = REPLACE(expected_slug, 'í', 'i');
+UPDATE _cat_slug_fix SET expected_slug = REPLACE(expected_slug, 'ó', 'o');
+UPDATE _cat_slug_fix SET expected_slug = REPLACE(expected_slug, 'ú', 'u');
+UPDATE _cat_slug_fix SET expected_slug = REPLACE(expected_slug, 'ñ', 'n');
+UPDATE _cat_slug_fix SET expected_slug = REPLACE(expected_slug, 'Á', 'a');
+UPDATE _cat_slug_fix SET expected_slug = REPLACE(expected_slug, 'É', 'e');
+UPDATE _cat_slug_fix SET expected_slug = REPLACE(expected_slug, 'Í', 'i');
+UPDATE _cat_slug_fix SET expected_slug = REPLACE(expected_slug, 'Ó', 'o');
+UPDATE _cat_slug_fix SET expected_slug = REPLACE(expected_slug, 'Ú', 'u');
+UPDATE _cat_slug_fix SET expected_slug = REPLACE(expected_slug, 'Ñ', 'n');
+UPDATE _cat_slug_fix SET expected_slug = REPLACE(expected_slug, 'ü', 'u');
+UPDATE _cat_slug_fix SET expected_slug = REPLACE(expected_slug, 'Ü', 'u');
 
--- 3) Trim de guiones iniciales/finales.
-UPDATE _cat_slug_fix
-SET expected_slug_raw = LTRIM(RTRIM(expected_slug_raw, '-'), '-');
+-- 3) Espacios y caracteres especiales a guion o vacio.
+UPDATE _cat_slug_fix SET expected_slug = REPLACE(expected_slug, ' ', '-');
+UPDATE _cat_slug_fix SET expected_slug = REPLACE(expected_slug, '&', 'y');
+UPDATE _cat_slug_fix SET expected_slug = REPLACE(expected_slug, '.', '');
+UPDATE _cat_slug_fix SET expected_slug = REPLACE(expected_slug, ',', '');
+UPDATE _cat_slug_fix SET expected_slug = REPLACE(expected_slug, ';', '');
+UPDATE _cat_slug_fix SET expected_slug = REPLACE(expected_slug, ':', '');
+UPDATE _cat_slug_fix SET expected_slug = REPLACE(expected_slug, '(', '-');
+UPDATE _cat_slug_fix SET expected_slug = REPLACE(expected_slug, ')', '-');
+UPDATE _cat_slug_fix SET expected_slug = REPLACE(expected_slug, '"', '');
+UPDATE _cat_slug_fix SET expected_slug = REPLACE(expected_slug, '''', '');
+UPDATE _cat_slug_fix SET expected_slug = REPLACE(expected_slug, '¡', '');
+UPDATE _cat_slug_fix SET expected_slug = REPLACE(expected_slug, '¿', '');
+UPDATE _cat_slug_fix SET expected_slug = REPLACE(expected_slug, '!', '');
+UPDATE _cat_slug_fix SET expected_slug = REPLACE(expected_slug, '?', '');
+UPDATE _cat_slug_fix SET expected_slug = REPLACE(expected_slug, '/', '-');
+UPDATE _cat_slug_fix SET expected_slug = REPLACE(expected_slug, '@', '-at-');
+UPDATE _cat_slug_fix SET expected_slug = REPLACE(expected_slug, '#', '');
 
--- 4) Limitar a 80 caracteres (igual que el backend).
-UPDATE _cat_slug_fix
-SET expected_slug_raw = SUBSTR(expected_slug_raw, 1, 80);
+-- 4) Limpiar dobles guiones y recortar a 80 caracteres.
+UPDATE _cat_slug_fix SET expected_slug = REPLACE(expected_slug, '--', '-');
+UPDATE _cat_slug_fix SET expected_slug = REPLACE(expected_slug, '--', '-');
+UPDATE _cat_slug_fix SET expected_slug = LTRIM(RTRIM(expected_slug, '-'), '-');
+UPDATE _cat_slug_fix SET expected_slug = SUBSTR(expected_slug, 1, 80);
 
--- 5) Reportar (preview) cuantas filas necesitan actualizacion.
---    Esto se ve en la salida de wrangler d1 execute.
+-- 5) Preview: cuantas filas necesitan actualizacion.
 SELECT
   id,
   name,
   current_slug,
-  expected_slug_raw AS new_slug,
-  CASE WHEN current_slug = expected_slug_raw THEN 'OK'
+  expected_slug AS new_slug,
+  CASE WHEN current_slug = expected_slug THEN 'OK'
        ELSE 'CAMBIA' END AS status
 FROM _cat_slug_fix
 ORDER BY name;
 
--- 6) Aplicar la actualizacion solo a las filas que cambiaron.
---    Manejo de colisiones: si el slug esperado ya existe en otra categoria,
---    se le agrega sufijo -2, -3, ... hasta encontrar uno libre.
+-- 6) Aplicar la actualizacion con manejo de colisiones (-1, -2, -3).
 UPDATE categories
-SET slug = (
-  SELECT
-    CASE
-      WHEN NOT EXISTS (
-        SELECT 1 FROM categories c2
-        WHERE c2.slug = (SELECT expected_slug_raw FROM _cat_slug_fix f WHERE f.id = categories.id)
-          AND c2.id != categories.id
-      )
-      THEN (SELECT expected_slug_raw FROM _cat_slug_fix f WHERE f.id = categories.id)
-      -- Buscar sufijo libre -2, -3, ..., -100
-      ELSE COALESCE(
-        (SELECT (SELECT expected_slug_raw FROM _cat_slug_fix f WHERE f.id = categories.id) || '-' || (cnt.n)
-         FROM (SELECT 2 AS n UNION SELECT 3 UNION SELECT 4 UNION SELECT 5 UNION SELECT 6
-               UNION SELECT 7 UNION SELECT 8 UNION SELECT 9 UNION SELECT 10 UNION SELECT 11
-               UNION SELECT 12 UNION SELECT 13 UNION SELECT 14 UNION SELECT 15 UNION SELECT 16
-               UNION SELECT 17 UNION SELECT 18 UNION SELECT 19 UNION SELECT 20) cnt
-         WHERE NOT EXISTS (
-           SELECT 1 FROM categories c3
-           WHERE c3.slug = (SELECT expected_slug_raw FROM _cat_slug_fix f WHERE f.id = categories.id) || '-' || (cnt.n)
-             AND c3.id != categories.id
-         )
-         LIMIT 1),
-        (SELECT expected_slug_raw FROM _cat_slug_fix f WHERE f.id = categories.id) || '-x'
-      )
-    END
-)
-WHERE id IN (SELECT id FROM _cat_slug_fix WHERE current_slug != expected_slug_raw)
+SET slug = CASE
+  -- Caso 1: sin colision, usar el esperado tal cual
+  WHEN NOT EXISTS (
+    SELECT 1 FROM categories c2
+    WHERE c2.slug = (SELECT expected_slug FROM _cat_slug_fix f WHERE f.id = categories.id)
+      AND c2.id != categories.id
+  )
+  THEN (SELECT expected_slug FROM _cat_slug_fix f WHERE f.id = categories.id)
+
+  -- Caso 2: colision 1, agregar sufijo -1
+  WHEN NOT EXISTS (
+    SELECT 1 FROM categories c3
+    WHERE c3.slug = ((SELECT expected_slug FROM _cat_slug_fix f WHERE f.id = categories.id) || '-1')
+      AND c3.id != categories.id
+  )
+  THEN ((SELECT expected_slug FROM _cat_slug_fix f WHERE f.id = categories.id) || '-1')
+
+  -- Caso 3: colision 2, agregar sufijo -2
+  WHEN NOT EXISTS (
+    SELECT 1 FROM categories c4
+    WHERE c4.slug = ((SELECT expected_slug FROM _cat_slug_fix f WHERE f.id = categories.id) || '-2')
+      AND c4.id != categories.id
+  )
+  THEN ((SELECT expected_slug FROM _cat_slug_fix f WHERE f.id = categories.id) || '-2')
+
+  -- Caso 4: colision 3, agregar sufijo -3
+  WHEN NOT EXISTS (
+    SELECT 1 FROM categories c5
+    WHERE c5.slug = ((SELECT expected_slug FROM _cat_slug_fix f WHERE f.id = categories.id) || '-3')
+      AND c5.id != categories.id
+  )
+  THEN ((SELECT expected_slug FROM _cat_slug_fix f WHERE f.id = categories.id) || '-3')
+
+  -- Fallback: dejar el slug actual (no deberia llegar aqui casi nunca)
+  ELSE categories.slug
+END,
+updated_at = datetime('now')
+WHERE id IN (SELECT id FROM _cat_slug_fix WHERE current_slug != expected_slug)
   AND is_active = 1;
 
--- 7) Marcar updated_at
-UPDATE categories
-SET updated_at = datetime('now')
-WHERE id IN (SELECT id FROM _cat_slug_fix WHERE current_slug != expected_slug_raw)
-  AND is_active = 1;
-
--- 8) Limpiar tabla temporal.
+-- 7) Limpiar tabla temporal.
 DROP TABLE _cat_slug_fix;
 
--- 9) Verificacion final.
+-- 8) Verificacion final.
 SELECT id, name, slug, updated_at
 FROM categories
 WHERE is_active = 1

@@ -1,0 +1,495 @@
+diff --git a/functions/api/categories/[id].js b/functions/api/categories/[id].js
+index 669f972..f8da418 100755
+--- a/functions/api/categories/[id].js
++++ b/functions/api/categories/[id].js
+@@ -48,6 +48,10 @@ async function requireAdmin(request, env) {
+ }
+ 
+ // ─── PUT: Update category ───────────────────────────────────
++// FIX: Cuando se cambia el `name`, se regenera el `slug` (manteniéndolo único).
++// Antes el slug NO se actualizaba, lo que dejaba la categoría inconsistente
++// (mostraba el nombre nuevo pero el slug viejo, rompiendo /categoria/:slug
++// y los enlaces de negocios que dependen de category_slug por JOIN).
+ export async function onRequestPut(context) {
+   try {
+     const { request, env, params } = context;
+@@ -71,21 +75,69 @@ export async function onRequestPut(context) {
+     }
+ 
+     const body = await request.json();
+-    const { name, icon, color, sort_order, is_active, banner_url } = body;
++    const { name, slug: explicitSlug, icon, color, sort_order, is_active, banner_url } = body;
+ 
+     // Auto-migrate: add banner_url column if missing
+     try { await env.DB.prepare('ALTER TABLE categories ADD COLUMN banner_url TEXT').run(); } catch(e) {}
+ 
+-    const existing = await env.DB.prepare('SELECT id FROM categories WHERE id = ?').bind(catId).first();
++    const existing = await env.DB.prepare('SELECT id, name, slug FROM categories WHERE id = ?').bind(catId).first();
+     if (!existing) {
+       return new Response(JSON.stringify({ error: 'Categoria no encontrada.' }), {
+         status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+       });
+     }
+ 
++    // ─── Slug regeneration logic ─────────────────────────────────
++    // 1) Si el admin pasa un `slug` explícito en el body, se usa tal cual (sanitizado).
++    // 2) Si no, y el `name` cambió, se regenera a partir del nuevo nombre.
++    // 3) Si el `name` no cambió y no hay slug explícito, NO se toca el slug.
++    function slugify(text) {
++      return (text || '').toLowerCase()
++        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
++        .replace(/[^a-z0-9\s-]/g, '')
++        .replace(/\s+/g, '-')
++        .replace(/-+/g, '-')
++        .replace(/^-|-$/g, '')
++        .substring(0, 80);
++    }
++
++    let newSlug = null;
++    let slugSource = null; // 'explicit' | 'regenerated'
++    if (explicitSlug !== undefined && typeof explicitSlug === 'string' && explicitSlug.trim()) {
++      newSlug = slugify(explicitSlug);
++      slugSource = 'explicit';
++    } else if (name !== undefined && name.trim() && name.trim() !== existing.name) {
++      newSlug = slugify(name);
++      slugSource = 'regenerated';
++    }
++
++    // Validate uniqueness only if slug is changing
++    if (newSlug && newSlug !== existing.slug) {
++      let candidate = newSlug;
++      let counter = 1;
++      while (counter <= 100) {
++        const dup = await env.DB.prepare(
++          'SELECT id FROM categories WHERE slug = ? AND id != ?'
++        ).bind(candidate, catId).first();
++        if (!dup) break;
++        candidate = newSlug + '-' + counter;
++        counter++;
++      }
++      newSlug = candidate;
++    } else if (newSlug && newSlug === existing.slug) {
++      // No change needed
++      newSlug = null;
++      slugSource = null;
++    }
++
+     const updates = [];
+     const values = [];
+     if (name !== undefined) { updates.push('name = ?'); values.push(name.trim()); }
++    if (newSlug !== null) {
++      updates.push('slug = ?');
++      values.push(newSlug);
++      updates.push("updated_at = datetime('now')");
++    }
+     if (icon !== undefined) { updates.push('icon = ?'); values.push(icon); }
+     if (color !== undefined) { updates.push('color = ?'); values.push(color); }
+     if (sort_order !== undefined) { updates.push('sort_order = ?'); values.push(parseInt(sort_order)); }
+@@ -103,7 +155,14 @@ export async function onRequestPut(context) {
+ 
+     const updated = await env.DB.prepare('SELECT * FROM categories WHERE id = ?').bind(catId).first();
+ 
+-    return new Response(JSON.stringify({ message: 'Categoria actualizada', category: updated }), {
++    return new Response(JSON.stringify({
++      message: 'Categoria actualizada',
++      category: updated,
++      slug_changed: newSlug !== null,
++      previous_slug: newSlug !== null ? existing.slug : null,
++      new_slug: newSlug,
++      slug_source: slugSource,
++    }), {
+       status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+     });
+   } catch (error) {
+diff --git a/functions/categoria/[slug].js b/functions/categoria/[slug].js
+index cc29dab..4eacf44 100755
+--- a/functions/categoria/[slug].js
++++ b/functions/categoria/[slug].js
+@@ -22,25 +22,39 @@ export async function onRequestGet(context) {
+     ).bind(slug).first();
+ 
+     if (!category) {
+-      // Try matching by name (slugify comparison)
++      // FIX: If the requested slug doesn't match any row, try to find a category
++      // whose slugify(name) matches — this catches renamed categories where
++      // external links still point to the OLD slug.
++      //
++      // Example: admin renames "Tapizados de Volantes" (slug: tapizados-de-volantes)
++      //          to "Tapizar IA" (new slug: tapizar-ia). Old Google links still
++      //          point to /categoria/tapizados-de-volantes. We try to find it by
++      //          slugify(name) first, and also by an alternative slug-match pass.
++      const decodedSlug = decodeURIComponent(slug);
++
++      // Pass 1: try matching by slugify(name) — handles cases where slug was
++      // never regenerated but name was changed
+       const allCats = await env.DB.prepare(
+         `SELECT * FROM categories ORDER BY name ASC`
+       ).all();
+       const match = (allCats.results || []).find(c => {
+-        const catSlug = c.name.toLowerCase()
++        const catSlug = (c.name || '').toLowerCase()
+           .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+           .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+-        return catSlug === decodeURIComponent(slug);
++        return catSlug === decodedSlug;
+       });
+-      if (!match) {
+-        return new Response('<h1>Categoría no encontrada</h1><p>La categoría que buscas no existe.</p>', {
+-          status: 404,
+-          headers: { 'Content-Type': 'text/html; charset=utf-8' },
++
++      if (match) {
++        // 301 redirect to the canonical URL with the current slug
++        return new Response('', {
++          status: 301,
++          headers: { 'Location': `/categoria/${match.slug}` },
+         });
+       }
+-      return new Response('', {
+-        status: 301,
+-        headers: { 'Location': `/categoria/${match.slug}` },
++
++      return new Response('<h1>Categoría no encontrada</h1><p>La categoría que buscas no existe.</p>', {
++        status: 404,
++        headers: { 'Content-Type': 'text/html; charset=utf-8' },
+       });
+     }
+ 
+diff --git a/js/admin.js b/js/admin.js
+index ab1e638..ea4cd6e 100755
+--- a/js/admin.js
++++ b/js/admin.js
+@@ -5153,7 +5153,10 @@ if (!window._renderVideoList) {
+                 html += '<td><div style="display:flex;align-items:center;gap:6px;">' + bannerThumb + '<input type="file" id="catBanner_' + c.id + '" accept="image/*" style="display:none;" onchange="admin2UploadCatBanner(' + c.id + ',this)"><button onclick="document.getElementById(\'catBanner_' + c.id + '\').click()" style="background:none;border:1px solid #d1d5db;border-radius:6px;padding:3px 8px;cursor:pointer;font-size:0.72rem;color:#374151;" title="Subir banner"><i class="fas fa-upload"></i></button>' + (c.banner_url ? '<button onclick="admin2RemoveCatBanner(' + c.id + ')" style="background:none;border:1px solid #fca5a5;border-radius:6px;padding:3px 8px;cursor:pointer;font-size:0.72rem;color:#dc2626;" title="Quitar banner"><i class="fas fa-times"></i></button>' : '') + '</div></td>';
+                 html += '<td>' + (c.business_count || 0) + '</td>';
+                 html += '<td>' + c.sort_order + '</td>';
+-                html += '<td><button onclick="admin2DeleteCat(' + c.id + ',\'' + _esc(c.name).replace(/'/g, "\\'") + '\')" style="background:none;border:none;color:#dc2626;cursor:pointer;font-size:0.82rem;" title="Desactivar"><i class="fas fa-trash"></i></button></td>';
++                html += '<td style="white-space:nowrap;">'
++                    + '<button onclick="admin2EditCat(' + c.id + ')" style="background:none;border:1px solid #d1d5db;border-radius:6px;padding:3px 8px;cursor:pointer;font-size:0.72rem;color:#374151;margin-right:4px;" title="Editar nombre / slug"><i class="fas fa-edit"></i></button>'
++                    + '<button onclick="admin2DeleteCat(' + c.id + ',\'' + _esc(c.name).replace(/'/g, "\\'") + '\')" style="background:none;border:none;color:#dc2626;cursor:pointer;font-size:0.82rem;" title="Desactivar"><i class="fas fa-trash"></i></button>'
++                    + '</td>';
+                 html += '</tr>';
+             });
+             tbody.innerHTML = html;
+@@ -5192,6 +5195,149 @@ if (!window._renderVideoList) {
+         }
+     };
+ 
++    // ═══════════════════════════════════════════════════════════
++    //  EDITAR CATEGORÍA — Modal de edición (nombre + slug + meta)
++    //  FIX: Antes no existía este modal; el admin renombraba vía
++    //  otros medios y el slug NO se regeneraba, dejando la DB
++    //  inconsistente. Ahora el backend recalcula el slug y este
++    //  modal le permite al admin:
++    //    - Editar nombre (slug se regenera solo)
++    //    - Editar slug manualmente (override)
++    //    - Editar icono, color, sort_order
++    //  Muestra advertencia clara cuando el slug cambia.
++    // ═══════════════════════════════════════════════════════════
++    window.admin2EditCat = async function(catId) {
++        // Buscar la categoría actual del último fetch
++        let cat = null;
++        try {
++            const data = await api.get('/categories');
++            cat = (data.categories || []).find(c => String(c.id) === String(catId));
++        } catch (e) {
++            showToast('No se pudo cargar la categoría', 'error');
++            return;
++        }
++        if (!cat) {
++            showToast('Categoría no encontrada', 'error');
++            return;
++        }
++
++        const slugifyLive = function(text) {
++            return (text || '').toLowerCase()
++                .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
++                .replace(/[^a-z0-9\s-]/g, '')
++                .replace(/\s+/g, '-')
++                .replace(/-+/g, '-')
++                .replace(/^-|-$/g, '')
++                .substring(0, 80);
++        };
++
++        const dialog = document.createElement('div');
++        dialog.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.55);z-index:99999;display:flex;align-items:center;justify-content:center;padding:16px;';
++        dialog.innerHTML = ''
++            + '<div style="background:#fff;border-radius:14px;padding:24px;max-width:520px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,0.3);max-height:90vh;overflow:auto;">'
++            + '  <h3 style="margin:0 0 16px;font-size:1.05rem;display:flex;align-items:center;gap:8px;"><i class="fas fa-edit" style="color:#006EE3;"></i> Editar Categoría</h3>'
++            + '  <input type="hidden" id="aebCatId" value="' + cat.id + '">'
++            + '  <div style="margin-bottom:12px;">'
++            + '    <label style="display:block;font-size:0.8rem;font-weight:600;margin-bottom:4px;color:#374151;">Nombre *</label>'
++            + '    <input type="text" id="aebCatName" value="' + _esc(cat.name) + '" style="width:100%;padding:8px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:0.9rem;" placeholder="Ej: Tapizar IA">'
++            + '  </div>'
++            + '  <div style="margin-bottom:12px;">'
++            + '    <label style="display:block;font-size:0.8rem;font-weight:600;margin-bottom:4px;color:#374151;">Slug (URL pública)</label>'
++            + '    <div style="display:flex;gap:6px;">'
++            + '      <input type="text" id="aebCatSlug" value="' + _esc(cat.slug) + '" style="flex:1;padding:8px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:0.85rem;font-family:monospace;color:#475569;" placeholder="auto-generado">'
++            + '      <button type="button" id="aebCatSlugAuto" style="background:#f1f5f9;border:1px solid #d1d5db;border-radius:8px;padding:0 12px;font-size:0.78rem;color:#374151;cursor:pointer;white-space:nowrap;" title="Regenerar a partir del nombre"><i class="fas fa-magic"></i> Auto</button>'
++            + '    </div>'
++            + '    <p style="font-size:0.72rem;color:#6b7280;margin:4px 0 0;">URL actual: <code style="background:#f1f5f9;padding:1px 5px;border-radius:4px;">/categoria/' + _esc(cat.slug) + '</code></p>'
++            + '    <p id="aebCatSlugWarn" style="font-size:0.72rem;color:#dc2626;margin:4px 0 0;display:none;"><i class="fas fa-exclamation-triangle"></i> El slug cambiará. Los enlaces antiguos se redirigen automáticamente (301) al nuevo.</p>'
++            + '  </div>'
++            + '  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">'
++            + '    <div>'
++            + '      <label style="display:block;font-size:0.8rem;font-weight:600;margin-bottom:4px;color:#374151;">Icono (FontAwesome)</label>'
++            + '      <input type="text" id="aebCatIcon" value="' + _esc(cat.icon || 'fas fa-store') + '" style="width:100%;padding:8px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:0.85rem;font-family:monospace;" placeholder="fas fa-store">'
++            + '    </div>'
++            + '    <div>'
++            + '      <label style="display:block;font-size:0.8rem;font-weight:600;margin-bottom:4px;color:#374151;">Color</label>'
++            + '      <input type="color" id="aebCatColor" value="' + _esc(cat.color || '#607d8b') + '" style="width:100%;height:38px;padding:2px;border:1px solid #d1d5db;border-radius:8px;cursor:pointer;">'
++            + '    </div>'
++            + '  </div>'
++            + '  <div style="margin-bottom:16px;">'
++            + '    <label style="display:block;font-size:0.8rem;font-weight:600;margin-bottom:4px;color:#374151;">Orden (sort_order)</label>'
++            + '    <input type="number" id="aebCatSort" value="' + (cat.sort_order || 0) + '" min="0" max="9999" style="width:120px;padding:8px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:0.85rem;">'
++            + '  </div>'
++            + '  <div style="display:flex;gap:8px;justify-content:flex-end;border-top:1px solid #e5e7eb;padding-top:16px;">'
++            + '    <button id="aebCatCancel" class="btn" style="padding:8px 16px;">Cancelar</button>'
++            + '    <button id="aebCatSave" class="btn btn-primary" style="background:#006EE3;border-color:#006EE3;padding:8px 18px;"><i class="fas fa-check"></i> Guardar</button>'
++            + '  </div>'
++            + '</div>';
++        document.body.appendChild(dialog);
++
++        const nameInput = dialog.querySelector('#aebCatName');
++        const slugInput = dialog.querySelector('#aebCatSlug');
++        const slugWarn = dialog.querySelector('#aebCatSlugWarn');
++        const originalSlug = cat.slug;
++
++        // Auto-regenerar slug cuando cambia el nombre (solo si el admin no tocó el slug manualmente)
++        let slugManuallyEdited = false;
++        slugInput.addEventListener('input', function() { slugManuallyEdited = true; });
++        nameInput.addEventListener('input', function() {
++            if (!slugManuallyEdited) {
++                slugInput.value = slugifyLive(nameInput.value);
++                updateSlugWarn();
++            }
++        });
++        dialog.querySelector('#aebCatSlugAuto').addEventListener('click', function() {
++            slugInput.value = slugifyLive(nameInput.value);
++            slugManuallyEdited = false;
++            updateSlugWarn();
++        });
++        slugInput.addEventListener('input', updateSlugWarn);
++
++        function updateSlugWarn() {
++            const newSlug = slugifyLive(slugInput.value);
++            if (newSlug && newSlug !== originalSlug) {
++                slugWarn.style.display = 'block';
++                slugWarn.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Slug cambiará de <code style="background:#fef2f2;padding:1px 5px;border-radius:4px;">' + _esc(originalSlug) + '</code> a <code style="background:#f0fdf4;padding:1px 5px;border-radius:4px;">' + _esc(newSlug) + '</code>. Los enlaces antiguos se redirigen automáticamente (301) al nuevo.';
++            } else {
++                slugWarn.style.display = 'none';
++            }
++        }
++
++        dialog.querySelector('#aebCatCancel').onclick = function() { document.body.removeChild(dialog); };
++        dialog.querySelector('#aebCatSave').onclick = async function() {
++            const payload = {
++                name: nameInput.value.trim(),
++                icon: dialog.querySelector('#aebCatIcon').value.trim(),
++                color: dialog.querySelector('#aebCatColor').value,
++                sort_order: parseInt(dialog.querySelector('#aebCatSort').value) || 0,
++            };
++            // Slug: si el admin lo editó o es distinto al original, mandarlo explícito
++            const finalSlug = slugifyLive(slugInput.value);
++            if (finalSlug && finalSlug !== originalSlug) {
++                payload.slug = finalSlug;
++            }
++            if (!payload.name) {
++                showToast('El nombre es obligatorio', 'error');
++                return;
++            }
++            try {
++                this.disabled = true;
++                this.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Guardando...';
++                const resp = await api.put('/categories/' + catId, payload);
++                document.body.removeChild(dialog);
++                if (resp.slug_changed) {
++                    showToast('Categoría actualizada. Slug: ' + resp.previous_slug + ' → ' + resp.new_slug, 'success');
++                } else {
++                    showToast('Categoría actualizada', 'success');
++                }
++                loadAdmin2Categories();
++            } catch (e) {
++                showToast('Error: ' + (e.message || ''), 'error');
++                this.disabled = false;
++                this.innerHTML = '<i class="fas fa-check"></i> Guardar';
++            }
++        };
++    };
++
+     async function loadAdmin2CatSuggestions() {
+         const container = document.getElementById('admin2CatSuggestionsList');
+         const countBadge = document.getElementById('admin2CatSuggCount');
+diff --git a/scripts/fixes/fix-category-slugs.sql b/scripts/fixes/fix-category-slugs.sql
+new file mode 100644
+index 0000000..2940cad
+--- /dev/null
++++ b/scripts/fixes/fix-category-slugs.sql
+@@ -0,0 +1,166 @@
++-- ──────────────────────────────────────────────────────────────────────────
++-- FIX: Sincronizar slugs de categorias existentes con su nombre actual.
++-- ──────────────────────────────────────────────────────────────────────────
++-- PROBLEMA:
++--   Cuando se renombraba una categoria via PUT /api/categories/[id],
++--   el `slug` NO se regeneraba, dejando la fila inconsistente
++--   (name nuevo, slug viejo). Esto rompia /categoria/:slug y los
++--   enlaces de negocios que dependen de category_slug por JOIN.
++--
++--   Ejemplo real:
++--     name = 'Tapizar IA'           (nombre nuevo)
++--     slug = 'tapizados-de-volantes' (slug viejo, NO coincide)
++--
++--   El frontend /categoria/tapizados-de-volantes seguia cargando
++--   (porque el slug viejo seguia en la DB) pero mostraba el nombre
++--   nuevo. El nuevo enlace /categoria/tapizar-ia devolvia 404.
++--
++-- SOLUCION:
++--   Este script recalcula el slug de TODAS las categorias activas
++--   a partir de su `name` actual, aplicando la misma logica de
++--   slugify que usa el backend. En caso de colision, se le agrega
++--   un sufijo -2, -3, etc.
++--
++-- USO (Cloudflare D1):
++--   wrangler d1 execute en-santiago-db --remote --file=scripts/fixes/fix-category-slugs.sql
++--
++--   (cambia en-santiago-db por el nombre real de tu binding D1,
++--    revisalo en wrangler.toml)
++--
++-- NOTAS:
++--   - Es seguro ejecutarlo multiples veces (idempotente).
++--   - Solo actualiza filas donde el slug actual NO coincide con el
++--     slug esperado.
++--   - NO borra datos, solo actualiza la columna `slug`.
++-- ──────────────────────────────────────────────────────────────────────────
++
++-- 1) Generar una tabla temporal con el slug esperado por cada categoria.
++--    SQLite no tiene funcion slugify nativa, asi que hacemos un LOWER +
++--    trim basico. La normalizacion de acentos se hace en dos pasadas
++--    con REPLACE (limitado a los mas comunes en espanol).
++CREATE TEMP TABLE IF NOT EXISTS _cat_slug_fix AS
++SELECT
++  id,
++  name,
++  slug AS current_slug,
++  LOWER(
++    REPLACE(
++      REPLACE(
++        REPLACE(
++          REPLACE(
++            REPLACE(
++              REPLACE(
++                REPLACE(
++                  REPLACE(
++                    REPLACE(
++                      REPLACE(
++                        REPLACE(
++                          REPLACE(
++                            REPLACE(
++                              REPLACE(
++                                REPLACE(
++                                  REPLACE(name, 'á','a'),
++                                'é','e'),
++                              'í','i'),
++                            'ó','o'),
++                          'ú','u'),
++                        'ñ','n'),
++                      'Á','a'),
++                    'É','e'),
++                  'Í','i'),
++                'Ó','o'),
++              'Ú','u'),
++            'Ñ','n'),
++          'ü','u'),
++        'Ü','u'),
++      ' ','-')
++    )
++  ) AS expected_slug_raw
++FROM categories
++WHERE is_active = 1;
++
++-- 2) Limpiar caracteres no alfanumericos (excepto guion).
++--    Como SQLite no soporta regex replace, lo hacemos con REPLACE en cadena
++--    para los caracteres mas comunes que aparecen en nombres de categorias.
++UPDATE _cat_slug_fix
++SET expected_slug_raw =
++  REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
++    REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
++      REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
++        REPLACE(REPLACE(REPLACE(REPLACE(expected_slug_raw,
++          '.',''), ',',''), ';',''), ':',''), '(',''), ')',''),
++          '[',''), ']',''), '{',''), '}',''),
++          '"',''), '''',''), '¡',''), '¿',''), '!',''),
++          '?',''), '&','y'), '/','-'), '\\','-'), '@',''),
++          '#',''), '$',''), '%',''), '*',''), '+',''),
++          '=',''), '<',''), '>',''), '|',''), '~',''),
++          '`',''), '^',''), '°',''), '--','-')
++;
++
++-- 3) Trim de guiones iniciales/finales.
++UPDATE _cat_slug_fix
++SET expected_slug_raw = LTRIM(RTRIM(expected_slug_raw, '-'), '-');
++
++-- 4) Limitar a 80 caracteres (igual que el backend).
++UPDATE _cat_slug_fix
++SET expected_slug_raw = SUBSTR(expected_slug_raw, 1, 80);
++
++-- 5) Reportar (preview) cuantas filas necesitan actualizacion.
++--    Esto se ve en la salida de wrangler d1 execute.
++SELECT
++  id,
++  name,
++  current_slug,
++  expected_slug_raw AS new_slug,
++  CASE WHEN current_slug = expected_slug_raw THEN 'OK'
++       ELSE 'CAMBIA' END AS status
++FROM _cat_slug_fix
++ORDER BY name;
++
++-- 6) Aplicar la actualizacion solo a las filas que cambiaron.
++--    Manejo de colisiones: si el slug esperado ya existe en otra categoria,
++--    se le agrega sufijo -2, -3, ... hasta encontrar uno libre.
++UPDATE categories
++SET slug = (
++  SELECT
++    CASE
++      WHEN NOT EXISTS (
++        SELECT 1 FROM categories c2
++        WHERE c2.slug = (SELECT expected_slug_raw FROM _cat_slug_fix f WHERE f.id = categories.id)
++          AND c2.id != categories.id
++      )
++      THEN (SELECT expected_slug_raw FROM _cat_slug_fix f WHERE f.id = categories.id)
++      -- Buscar sufijo libre -2, -3, ..., -100
++      ELSE COALESCE(
++        (SELECT (SELECT expected_slug_raw FROM _cat_slug_fix f WHERE f.id = categories.id) || '-' || (cnt.n)
++         FROM (SELECT 2 AS n UNION SELECT 3 UNION SELECT 4 UNION SELECT 5 UNION SELECT 6
++               UNION SELECT 7 UNION SELECT 8 UNION SELECT 9 UNION SELECT 10 UNION SELECT 11
++               UNION SELECT 12 UNION SELECT 13 UNION SELECT 14 UNION SELECT 15 UNION SELECT 16
++               UNION SELECT 17 UNION SELECT 18 UNION SELECT 19 UNION SELECT 20) cnt
++         WHERE NOT EXISTS (
++           SELECT 1 FROM categories c3
++           WHERE c3.slug = (SELECT expected_slug_raw FROM _cat_slug_fix f WHERE f.id = categories.id) || '-' || (cnt.n)
++             AND c3.id != categories.id
++         )
++         LIMIT 1),
++        (SELECT expected_slug_raw FROM _cat_slug_fix f WHERE f.id = categories.id) || '-x'
++      )
++    END
++)
++WHERE id IN (SELECT id FROM _cat_slug_fix WHERE current_slug != expected_slug_raw)
++  AND is_active = 1;
++
++-- 7) Marcar updated_at
++UPDATE categories
++SET updated_at = datetime('now')
++WHERE id IN (SELECT id FROM _cat_slug_fix WHERE current_slug != expected_slug_raw)
++  AND is_active = 1;
++
++-- 8) Limpiar tabla temporal.
++DROP TABLE _cat_slug_fix;
++
++-- 9) Verificacion final.
++SELECT id, name, slug, updated_at
++FROM categories
++WHERE is_active = 1
++ORDER BY name;

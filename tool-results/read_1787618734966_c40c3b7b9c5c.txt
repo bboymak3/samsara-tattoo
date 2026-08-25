@@ -1,0 +1,764 @@
+     1→# En Santiago — Documentación del Proyecto
+     2→
+     3→> **Para IAs y nuevas sesiones**: este documento es el mapa completo del proyecto. Léelo primero antes de tocar cualquier archivo.
+     4→
+     5→**Última actualización**: 2026-08-25
+     6→**Sesión de actualización**: fixes de slug, galería, mapa, SEO, toggles admin, planes, geocodificación automática
+     7→
+     8→## 📋 Resumen Ejecutivo
+     9→
+    10→**En Santiago** es un directorio metropolitano de negocios de Santiago de Chile construido sobre Cloudflare Pages + Functions, con base de datos D1, almacenamiento R2, e integración con Workers AI. Incluye también un sub-sistema de Inmobiliaria, Marketplace, Empleo, Academia de Agentes y Chat IA.
+    11→
+    12→**URL producción**: `https://en-santiago.pages.dev`
+    13→
+    14→---
+    15→
+    16→## 🏗️ Arquitectura
+    17→
+    18→### Stack
+    19→- **Hosting**: Cloudflare Pages (con Pages Functions)
+    20→- **Runtime**: Cloudflare Workers (V8 isolates, sin Node.js nativo)
+    21→- **DB**: Cloudflare D1 (SQLite distribuido)
+    22→- **Storage**: Cloudflare R2 (compatible S3, sin egresos)
+    23→- **AI**: Cloudflare Workers AI (modelo `@cf/meta/llama-3.1-8b-instruct`)
+    24→- **Frontend**: HTML estático + JavaScript vanilla (sin React/Vue)
+    25→- **Auth**: JWT HMAC-SHA256 firmado en edge, almacenado en `localStorage`
+    26→
+    27→### Bindings (definidos en `wrangler.toml`)
+    28→
+    29→| Binding | Tipo | Recurso |
+    30→|---|---|---|
+    31→| `DB` | D1 database | `en-santiago-db` (ID: `083ae5ed-b15f-4ff3-abcf-b3a3b666bb79`) |
+    32→| `R2` | R2 bucket | `en-santiago-media` |
+    33→| `AI` | Workers AI | Llama 3.1 8B Instruct |
+    34→| `JWT_SECRET` | Var | `ensantiago_jwt_secret_2024` |
+    35→| `R2_FOLDER` | Var | `santiago` |
+    36→
+    37→⚠️ **NOTA IMPORTANTE**: Cloudflare Pages NO está conectado a GitHub (source = None). Los deploys se hacen con `wrangler pages deploy`. Esto significa que `git push` **NO despliega automáticamente**. Ver sección "Deploy" abajo.
+    38→
+    39→---
+    40→
+    41→## 📁 Estructura del Proyecto
+    42→
+    43→```
+    44→en-santiago/
+    45→├── functions/                 # Cloudflare Pages Functions (backend API + SSR)
+    46→│   ├── _lib/                  # Helpers compartidos (auth, render HTML)
+    47→│   ├── api/                   # API REST JSON (/api/...)
+    48→│   ├── [tipo]/[categoria]/   # SSR: /:tipo/:categoria/:slug (URL canónica negocio)
+    49→│   ├── categoria/[slug].js    # SSR: /categoria/:slug
+    50→│   ├── negocio/[slug].js      # Legacy: /negocio/:slug → 301 a URL canónica
+    51→│   ├── estado/[slug].js       # SSR: /comuna/:slug (SÍ, dice comuna)
+    52→│   ├── web/[slug].js          # SSR: /web/:slug (landing page standalone negocio)
+    53→│   ├── producto/[slug].js     # Legacy: /producto/:slug → 301
+    54→│   ├── producto/[tipo]/[slug].js  # URL canónica producto
+    55→│   ├── medicina-servicio-medico/[slug].js  # Legacy medicina → 301
+    56→│   └── sitemap.xml/index.js   # /sitemap.xml dinámico
+    57→├── js/                        # Frontend JS vanilla
+    58→├── *.html                     # Páginas estáticas (~35 archivos)
+    59→├── css/styles.css             # Estilos globales
+    60→├── images/                    # Imágenes del sitio
+    61→├── scripts/                   # Scripts Python/JS de migración y mantenimiento
+    62→│   └── fixes/                 # Migraciones SQL puntuales
+    63→├── wrangler.toml              # Config Cloudflare Pages
+    64→└── _headers, _redirects       # Config Cloudflare edge
+    65→```
+    66→
+    67→---
+    68→
+    69→## 🗄️ Base de Datos D1 (`en-santiago-db`)
+    70→
+    71→### Tablas (con `is_active` para soft-delete donde aplica)
+    72→
+    73→| Tabla | Propósito | Keys importantes |
+    74→|---|---|---|
+    75→| `users` | Usuarios (rol: `user` / `admin` / `seller` / `agent`) | email UNIQUE, password_hash, plan_type, seller_owner_id |
+    76→| `businesses` | Negocios | slug UNIQUE, category_id FK, user_id FK, status (`pending`/`approved`/`rejected`) |
+    77→| `categories` | Categorías de negocios | slug UNIQUE, tipo_negocio_id FK, banner_url |
+    78→| `tipos_negocio` | Tipos de negocio (Automotriz, Salud, Comida, etc.) | slug UNIQUE |
+    79→| `images` | Imágenes de negocios | business_id FK, is_cover, order_index |
+    80→| `products` | Productos del marketplace | slug, business_id FK, product_type |
+    81→| `properties` | Inmuebles | slug, user_id FK, status |
+    82→| `property_images` | Imágenes de inmuebles | property_id FK |
+    83→| `property_contacts` | Contactos por inmueble | property_id FK |
+    84→| `property_favorites` | Favoritos de inmuebles | user_id + property_id |
+    85→| `jobs` / `job_listings` | Ofertas de empleo | business_id FK, status |
+    86→| `events` | Eventos | owner_id FK |
+    87→| `coupons` | Cupones de descuento | business_id FK |
+    88→| `reviews` | Reseñas de negocios | business_id + user_id |
+    89→| `product_comments` | Comentarios en productos | product_id + user_id |
+    90→| `contacts` | Mensajes a negocios | business_id, user_id |
+    91→| `conversations` | Conversaciones de chat | business_id, user_id, visitor_id |
+    92→| `messages` | Mensajes individuales del chat | conversation_id FK |
+    93→| `favorites` | Favoritos de negocios | user_id + business_id |
+    94→| `featured_items` | Items destacados (por `item_type`) | item_type + item_id |
+    95→| `notifications` | Notificaciones | user_id FK |
+    96→| `points_log` | Log de puntos (gamificación) | user_id FK |
+    97→| `bookings` | Reservas | business_id, user_id |
+    98→| `partners` | Partners digitales | slug |
+    99→| `settings` / `admin_settings` | Configuración del sitio | key/value |
+   100→| `business_services` | Servicios que ofrece un negocio | business_id FK |
+   101→| `business_analytics` | Métricas por negocio | business_id |
+   102→| `category_suggestions` | Sugerencias de categorías por usuarios | status (`pending`/`approved`/`rejected`) |
+   103→| `premium_requests` | Solicitudes de plan premium | user_id, status |
+   104→| `fb_config` | Config Facebook import | — |
+   105→| `fb_imports` | Log de importaciones Facebook | — |
+   106→| `video_carousel` | Carousel de videos home | — |
+   107→| `bazar_responses` | Respuestas del bazar (chat IA) | — |
+   108→| `emergency_services` | Servicios de emergencia | — |
+   109→| `states` | Comunas de Santiago (referencia) | slug |
+   110→| `sellers_profiles` | Perfil de sellers | user_id FK |
+   111→| `agent_classes` | Clases de la academia | is_active |
+   112→| `class_questions` | Preguntas de las clases | class_id FK |
+   113→| `class_assignments` | Asignaciones clase → usuario | — |
+   114→| `agent_profiles` | Progreso del agente | user_id, level, xp |
+   115→| `user_class_progress` | Progreso por clase | user_id + class_id |
+   116→| `user_badges` | Insignias obtenidas | user_id FK |
+   117→
+   118→### Migraciones
+   119→
+   120→Las migraciones están como endpoints HTTP GET (correr una vez):
+   121→- `/api/migrate/add-social-video` — Añade columnas social + video a businesses y products
+   122→- `/api/migrate/agent-academy` — Crea tablas de la academia de agentes
+   123→- `/api/migrate/category-suggestions` — Crea tabla `category_suggestions`
+   124→- `/api/migrate/product-type` — Añade columna `product_type` a products
+   125→- `/api/migrate/schema-premium` — Sistema de planes premium
+   126→- `/api/migrate/seller-role` — Migra users para soportar rol `seller`
+   127→- `/api/migrate/tipos-negocio` — Crea tabla `tipos_negocio` y añade `tipo_negocio_id` a categories
+   128→
+   129→**Scripts SQL sueltos** (en `/scripts/` y `/scripts/fixes/`):
+   130→- `migrate_users.sql`, `migrate_users2.sql` — Quita CHECK constraint de `role`
+   131→- `seed_2_test_businesses.sql` — 2 negocios de prueba (centro médico + ferretería)
+   132→- `fixes/fix-category-slugs.sql` — Sincroniza slugs de categorías con su nombre
+   133→
+   134→---
+   135→
+   136→## 🔐 Sistema de Autenticación
+   137→
+   138→### Flujo
+   139→
+   140→1. **Login**: `POST /api/auth/login` con `{email, password}` → valida `password_hash` (PBKDF2) → retorna JWT
+   141→2. **JWT**: HMAC-SHA256 firmado con `env.JWT_SECRET` (3 partes: header.payload.signature, base64url)
+   142→3. **Storage**: Frontend guarda en `localStorage` con keys `ensantiago_token` y `ensantiago_user`
+   143→4. **Requests autenticadas**: Header `Authorization: Bearer <jwt>`
+   144→5. **Verificación server-side**: `getUserFromRequest(request, env)` en `functions/_lib/auth.js`
+   145→6. **Admin check**: `requireAdmin(request, env)` verifica `user.role === 'admin'`
+   146→7. **Owner check**: en endpoints de businesses/properties, compara `user.id === business.user_id` O `user.role === 'admin'`
+   147→
+   148→### Roles
+   149→
+   150→- `user` — Usuario normal, puede publicar negocios, productos, propiedades
+   151→- `admin` — Acceso total: panel admin, crear/editar categorías, aprobar/rechazar contenidos, gestionar usuarios
+   152→- `seller` — Vendedor con sub-usuarios (`seller_owner_id` apunta al usuario padre)
+   153→- `agent` — Agente del programa AunClick Academy (gamificado con XP, badges, clases)
+   154→
+   155→### Endpoints de Auth
+   156→
+   157→- `POST /api/auth/register` — Registro email+password
+   158→- `POST /api/auth/login` — Login email+password
+   159→- `POST /api/auth/google` — Login/registro con Google ID token
+   160→- `GET  /api/auth/google-config` — Config Google OAuth (público)
+   161→- `GET  /api/auth/me` — Datos del usuario actual
+   162→- `POST /api/auth/promote-me` — Auto-promover a admin (debug only, debe desactivarse en prod)
+   163→
+   164→---
+   165→
+   166→## 🌐 Endpoints API (Mapa Completo)
+   167→
+   168→### Estructura: `functions/api/<dominio>/<recurso>.js`
+   169→
+   170→Cada archivo exporta handlers: `onRequestGet`, `onRequestPost`, `onRequestPut`, `onRequestDelete`, `onRequestOptions`.
+   171→
+   172→### 🔐 Convenciones de seguridad
+   173→
+   174→- **Público**: sin auth. Listados, fichas, páginas SSR.
+   175→- **Auth requerida**: header `Authorization: Bearer <jwt>`. Crear/editar contenido propio.
+   176→- **Admin only**: requiere `user.role === 'admin'`. Gestionar categorías, usuarios, aprobar contenido.
+   177→- **Owner**: el `user.id` debe coincidir con el `user_id` del recurso.
+   178→
+   179→### Negocios (CRUD principal)
+   180→
+   181→| Método | Ruta | Auth | Función |
+   182→|---|---|---|---|
+   183→| GET | `/api/businesses` | público | Listado con filtros (`status`, `categoria`, `business_type`, `featured`, `q`, `page`, `limit`) |
+   184→| POST | `/api/businesses` | user | Crear negocio (genera slug único) |
+   185→| GET | `/api/businesses/[id]` | público | Detalle del negocio |
+   186→| PUT | `/api/businesses/[id]` | owner/admin | Editar (regenera slug si cambia title, invalida `ai_cache`) |
+   187→| DELETE | `/api/businesses/[id]` | owner/admin | Borrar (borra imágenes R2) |
+   188→| POST | `/api/businesses/[id]/approve` | admin | Aprobar negocio pendiente |
+   189→| POST | `/api/businesses/[id]/reject` | admin | Rechazar negocio |
+   190→| POST | `/api/businesses/[id]/republish` | owner/admin | Republicar negocio cerrado |
+   191→| PUT | `/api/businesses/featured/clear` | admin | Limpiar featured de todos |
+   192→| GET | `/api/businesses/[id]/services` | público | Listar servicios del negocio |
+   193→| POST | `/api/businesses/[id]/services` | owner/admin | Crear servicio |
+   194→| PUT/DELETE | `/api/businesses/[id]/services/[serviceId]` | owner/admin | Editar/borrar servicio |
+   195→
+   196→### Categorías y Tipos
+   197→
+   198→| Método | Ruta | Auth | Función |
+   199→|---|---|---|---|
+   200→| GET | `/api/categories` | público | Lista categorías activas (JOIN con tipos_negocio) |
+   201→| POST | `/api/categories` | admin | Crear categoría (slug se calcula del name) |
+   202→| PUT | `/api/categories/[id]` | admin | **FIX aplicado**: regenera slug si cambia name + redirect 301 + modal admin |
+   203→| DELETE | `/api/categories/[id]` | admin | Soft-delete (`is_active = 0`) |
+   204→| GET | `/api/tipos-negocio` | público | Lista tipos de negocio |
+   205→| GET | `/api/category-suggestions` | público | Lista sugerencias de categorías |
+   206→| POST | `/api/category-suggestions` | user | Crear sugerencia |
+   207→| PUT | `/api/category-suggestions/[id]` | admin | Aprobar/rechazar sugerencia |
+   208→| GET | `/api/backfill-slugs/[key]` | admin | Backfill de slugs faltantes |
+   209→
+   210→### Usuarios y Auth
+   211→
+   212→| Método | Ruta | Auth | Función |
+   213→|---|---|---|---|
+   214→| POST | `/api/auth/login` | público | Login |
+   215→| POST | `/api/auth/register` | público | Registro |
+   216→| POST | `/api/auth/google` | público | Login con Google OAuth |
+   217→| GET | `/api/auth/me` | auth | Datos del usuario actual |
+   218→| GET | `/api/auth/google-config` | público | Config Google |
+   219→| POST | `/api/auth/promote-me` | auth | Auto-promover a admin (debug) |
+   220→| GET | `/api/users` | admin | Lista usuarios (con paginación) |
+   221→| GET | `/api/users/me` | auth | Alias de `/auth/me` |
+   222→| GET | `/api/users/[id]` | admin | Detalle de un usuario |
+   223→| PUT | `/api/users/[id]` | admin | Editar usuario |
+   224→| DELETE | `/api/users/[id]` | admin | Eliminar usuario |
+   225→| POST | `/api/users/activate-premium` | admin | Activar plan premium a un usuario |
+   226→| GET | `/api/user/my-businesses` | auth | Negocios del usuario actual |
+   227→| GET | `/api/user-profile` | auth | Perfil público del usuario |
+   228→
+   229→### Properties (Inmobiliaria)
+   230→
+   231→| Método | Ruta | Auth | Función |
+   232→|---|---|---|---|
+   233→| GET | `/api/properties` | público | Listado con filtros |
+   234→| POST | `/api/properties` | auth | Crear inmueble |
+   235→| GET | `/api/properties/[id]` | público | Detalle |
+   236→| PUT | `/api/properties/[id]` | owner/admin | Editar |
+   237→| DELETE | `/api/properties/[id]` | owner/admin | Eliminar |
+   238→| POST | `/api/properties/[id]/approve` | admin | Aprobar |
+   239→| POST | `/api/properties/[id]/reject` | admin | Rechazar |
+   240→| GET | `/api/property-favorites` | auth | Lista favoritos del usuario |
+   241→| GET | `/api/property-favorites/check` | auth | Check si está en favoritos |
+   242→| POST | `/api/property-favorites` | auth | Toggle favorito |
+   243→| GET/POST/DELETE | `/api/property-images/[propertyId]` | owner/admin | Imágenes del inmueble |
+   244→
+   245→### Marketplace (Productos)
+   246→
+   247→| Método | Ruta | Auth | Función |
+   248→|---|---|---|---|
+   249→| GET | `/api/marketplace` | público | Lista productos (check `marketplace_enabled` en settings) |
+   250→| POST | `/api/marketplace` | auth | Crear producto |
+   251→| GET | `/api/marketplace/[id]` | público | Detalle |
+   252→| PUT | `/api/marketplace/[id]` | owner/admin | Editar |
+   253→| DELETE | `/api/marketplace/[id]` | owner/admin | Eliminar |
+   254→| POST | `/api/marketplace/[id]/approve` | admin | Aprobar |
+   255→| POST | `/api/marketplace/[id]/reject` | admin | Rechazar |
+   256→| POST | `/api/marketplace/[id]/republish` | owner/admin | Republicar |
+   257→
+   258→### Empleo y Eventos
+   259→
+   260→| Método | Ruta | Auth | Función |
+   261→|---|---|---|---|
+   262→| GET | `/api/jobs` | público | Listado con filtros |
+   263→| POST | `/api/jobs` | auth | Crear oferta |
+   264→| GET/PUT/DELETE | `/api/jobs/[id]` | owner/admin | CRUD individual |
+   265→| GET | `/api/events` | público | Lista eventos |
+   266→| POST | `/api/events` | auth | Crear evento |
+   267→| GET/PUT/DELETE | `/api/events/[id]` | owner/admin | CRUD individual |
+   268→
+   269→### Chat y Mensajería
+   270→
+   271→| Método | Ruta | Auth | Función |
+   272→|---|---|---|---|
+   273→| GET | `/api/chat/conversations` | auth | Lista conversaciones del usuario |
+   274→| POST | `/api/chat/conversations` | auth | Crear conversación |
+   275→| GET | `/api/chat/messages?conversation_id=X` | auth | Mensajes de una conversación |
+   276→| POST | `/api/chat/messages` | auth | Enviar mensaje |
+   277→| GET | `/api/chat/config` | auth | Configuración de chat |
+   278→| GET | `/api/admin/chat-logs` | admin | Todas las conversaciones (con search) |
+   279→
+   280→### Imágenes y R2
+   281→
+   282→| Método | Ruta | Auth | Función |
+   283→|---|---|---|---|
+   284→| POST | `/api/upload` | auth | Subir imagen a R2 (`product_type` distingue: business, marketplace, property, category_banner) |
+   285→| GET | `/api/serve?key=...` | público | Servir imagen desde R2 |
+   286→| GET | `/api/images/[businessId]` | público | Lista imágenes de un negocio |
+   287→| POST | `/api/images/[businessId]` | owner/admin | Asociar imagen a negocio |
+   288→| DELETE | `/api/images/[businessId]` | owner/admin | Borrar imagen (R2 + DB) |
+   289→| POST | `/api/images/[businessId]/set-cover` | owner/admin | Marcar imagen como cover |
+   290→
+   291→### AI (Workers AI)
+   292→
+   293→| Método | Ruta | Auth | Función |
+   294→|---|---|---|---|
+   295→| POST | `/api/ai-chat` | público | Chatbot público (Llama 3.1 8B) |
+   296→| POST | `/api/agent-classes/generate-questions` | admin | Generar preguntas con IA para una clase |
+   297→
+   298→### Academia de Agentes (AunClick Academy)
+   299→
+   300→| Método | Ruta | Auth | Función |
+   301→|---|---|---|---|
+   302→| GET | `/api/agent-classes` | auth | Lista clases |
+   303→| POST | `/api/agent-classes` | admin | Crear clase |
+   304→| GET/PUT/DELETE | `/api/agent-classes/[id]` | auth/admin | CRUD clase |
+   305→| GET/POST | `/api/agent-classes/[id]/questions` | auth/admin | Preguntas de la clase |
+   306→| PUT/DELETE | `/api/agent-classes/[id]/questions/[qid]` | admin | CRUD pregunta |
+   307→| GET/POST | `/api/agent-exam` | auth | Examen final |
+   308→| GET | `/api/agent-exam/questions` | auth | Preguntas del examen |
+   309→| GET | `/api/agent-progress` | auth | Progreso del agente (XP, nivel, badges) |
+   310→
+   311→### Seller / Vendedores
+   312→
+   313→| Método | Ruta | Auth | Función |
+   314→|---|---|---|---|
+   315→| GET | `/api/seller/stats` | seller | Stats del vendedor |
+   316→| GET | `/api/seller/referred` | seller | Usuarios referidos |
+   317→| POST | `/api/admin/create-seller` | admin | Crear seller |
+   318→| GET | `/api/admin/sellers` | admin | Lista sellers |
+   319→| GET | `/api/admin/sellers/[userId]/stats` | admin | Stats de un seller |
+   320→
+   321→### Planes Premium
+   322→
+   323→| Método | Ruta | Auth | Función |
+   324→|---|---|---|---|
+   325→| POST | `/api/plans/request-upgrade` | auth | Solicitar upgrade a premium |
+   326→| GET | `/api/premium-requests` | admin | Lista solicitudes |
+   327→| POST | `/api/premium-requests/[id]/approve` | admin | Aprobar |
+   328→| POST | `/api/premium-requests/[id]/reject` | admin | Rechazar |
+   329→
+   330→### Otros endpoints
+   331→
+   332→| Método | Ruta | Auth | Función |
+   333→|---|---|---|---|
+   334→| GET | `/api/stats` | admin | Stats del dashboard |
+   335→| GET | `/api/settings` | admin | Config del sitio |
+   336→| PUT | `/api/settings` | admin | Actualizar config |
+   337→| GET | `/api/settings/public` | público | Config pública (no sensible) |
+   338→| GET | `/api/notifications` | auth | Notificaciones del usuario |
+   339→| POST | `/api/notifications` | auth | Crear notificación |
+   340→| DELETE | `/api/notifications` | auth | Borrar (propia) o todas (admin) |
+   341→| GET/POST | `/api/favorites` | auth | Favoritos de negocios |
+   342→| GET | `/api/favorites/check` | auth | Check favorito |
+   343→| GET/POST | `/api/points` | auth | Puntos (gamificación) |
+   344→| GET/POST | `/api/coupons` | owner/admin | Cupones de descuento |
+   345→| GET/POST | `/api/reviews` | auth | Reseñas |
+   346→| GET/POST | `/api/product-comments` | auth | Comentarios en productos |
+   347→| GET/POST | `/api/contacts` | público | Mensajes a negocios |
+   348→| POST | `/api/contacts/admin-message` | admin | Mensaje del admin a usuario |
+   349→| GET/POST/DELETE | `/api/featured-items` | admin | Items destacados (por `item_type`) |
+   350→| GET/POST/DELETE | `/api/video-carousel` | admin | Carousel de videos del home |
+   351→| GET/POST | `/api/bazar` | público | Respuestas del bazar IA |
+   352→| GET/POST | `/api/bookings` | auth | Reservas |
+   353→| GET/POST | `/api/partners` | público | Partners digitales |
+   354→| GET | `/api/business-stats/[businessId]` | owner/admin | Métricas de un negocio |
+   355→| POST | `/api/business-stats/track` | público | Tracking de views (público) |
+   356→| GET | `/api/sitemap` | público | Genera sitemap (JSON) |
+   357→| GET | `/api/robots` | público | Genera robots.txt dinámico |
+   358→| GET | `/api/emergency` | público | Servicios de emergencia |
+   359→| GET | `/api/facebook/config` | admin | Config Facebook import |
+   360→| POST | `/api/facebook/import` | admin | Importar desde Facebook |
+   361→| GET | `/api/facebook/history` | admin | Historial imports |
+   362→| POST | `/api/admin/create-user` | admin | Crear usuario |
+   363→| POST | `/api/admin/agent-actions` | admin | Acciones sobre agentes |
+   364→| POST | `/api/admin/academy-analytics` | admin | Analytics de la academia |
+   365→| GET | `/api/debug/*` | admin | Endpoints de diagnóstico (health, chat-status, map-check, premium-check, upload-test) |
+   366→
+   367→### Rutas SSR (HTML generado en edge)
+   368→
+   369→| Ruta | Archivo | Función |
+   370→|---|---|---|
+   371→| `/:tipo/:categoria/:slug` | `functions/[tipo]/[categoria]/[slug].js` | Ficha canónica del negocio. **FIX aplicado**: si la URL tiene categoría vieja, redirect 301 a la actual. |
+   372→| `/categoria/:slug` | `functions/categoria/[slug].js` | Página SEO de categoría (lista negocios). **FIX aplicado**: fallback por `slugify(name)` + 301. |
+   373→| `/negocio/:slug` | `functions/negocio/[slug].js` | Legacy → 301 a `/:tipo/:categoria/:slug`. |
+   374→| `/web/:slug` | `functions/web/[slug].js` | Landing page standalone (sitio web completo generado del negocio). |
+   375→| `/comuna/:slug` | `functions/estado/[slug].js` | Página SEO por comuna de Santiago. |
+   376→| `/producto/:tipo/:slug` | `functions/producto/[tipo]/[slug].js` | Ficha canónica producto. |
+   377→| `/producto/:slug` | `functions/producto/[slug].js` | Legacy → 301 a URL canónica. |
+   378→| `/medicina-servicio-medico/:slug` | `functions/medicina-servicio-medico/[slug].js` | Legacy medicina → 301. |
+   379→| `/sitemap.xml` | `functions/sitemap.xml/index.js` | Sitemap XML dinámico. |
+   380→
+   381→---
+   382→
+   383→## 🎨 Frontend (HTML + JS vanilla)
+   384→
+   385→### Páginas HTML principales
+   386→
+   387→| Página | Función | JS cargado |
+   388→|---|---|---|
+   389→| `index.html` | Home del sitio | `app.js`, `home-map.js`, `weather.js`, `dynamic-categories.js` |
+   390→| `search.html` | Buscador de negocios | `app.js`, `properties-search.js` |
+   391→| `business.html` | Ficha negocio (cliente) | `app.js`, `business-detail.js` |
+   392→| `dashboard.html` | Panel del usuario (sus negocios, productos, etc.) | `app.js`, `dashboard.js` |
+   393→| `admin.html` | Panel admin (todo el sitio) | `app.js`, `admin.js` (6890 líneas) |
+   394→| `admin-edit-business.html` | Editor avanzado de negocios | `admin.js`, `business-form.js` |
+   395→| `admin-chat.html` | Chat admin | `app.js`, `chat.js` |
+   396→| `admin-vendedores.html` | Panel de vendedores | `app.js`, `seller.js` |
+   397→| `login.html` | Login + registro | `auth.js` |
+   398→| `new-business.html` | Formulario crear negocio | `app.js`, `business-form.js` |
+   399→| `new-property.html` | Formulario crear inmueble | `app.js`, `property-form.js` |
+   400→| `properties.html` | Listado inmuebles | `app.js`, `properties-search.js` |
+   401→| `property-detail.html` | Ficha inmueble | `app.js`, `property-detail.js` |
+   402→| `marketplace.html` | Marketplace de productos | `app.js` |
+   403→| `empleo.html` | Listado empleos | `app.js` |
+   404→| `map.html` | Mapa interactivo | `app.js`, `map.js` |
+   405→| `cupones.html` | Cupones | `app.js` |
+   406→| `eventos.html` | Eventos | `app.js` |
+   407→| `emergencia.html` | Servicios de emergencia | `app.js` |
+   408→| `planes.html` | Planes premium | `app.js` |
+   409→| `perfil.html` | Perfil de agente (academia) | `app.js`, `seller.js` |
+   410→| `academia.html` | Academia de agentes | `app.js` |
+   411→| `partners.html` | Partners digitales | `app.js` |
+   412→| `quienes-somos.html` | About | `app.js` |
+   413→| `contacto.html` | Contacto | `app.js` |
+   414→| `eliminacion-datos.html` | Solicitar eliminación de datos | `app.js` |
+   415→| `clientes-satisfechos.html` | Testimonios | `app.js` |
+   416→| `entretenimiento.html` | Sección entretenimiento | `app.js` |
+   417→| `reservas.html` | Reservas | `app.js` |
+   418→| `curso.html` | Curso | `app.js` |
+   419→| `privacidad.html` | Política de privacidad | — |
+   420→| `mision-vision.html` | Misión y visión | — |
+   421→| `debug-vendedores.html` | Debug panel vendedores | `app.js` |
+   422→| `index_full.html` | Landing Global Pro Automotriz (legacy, fuera de uso) | — |
+   423→
+   424→### Frontend JS (`/js/`)
+   425→
+   426→| Archivo | Propósito | Funciones globales (`window.*`) |
+   427→|---|---|---|
+   428→| `app.js` | Core: API client, helpers, búsqueda, tarjetas | `api`, `getBusinessUrl`, `createBusinessCard`, `shareBusinessWhatsApp`, `isAuthenticated`, `getToken`, `getUser` |
+   429→| `auth.js` | Login/registro en login.html | — |
+   430→| `dashboard.js` | Panel usuario en dashboard.html | `_openEditBizModal` |
+   431→| `admin.js` | Panel admin completo (6890 líneas) | `admin2EditCat`, `admin2ApproveSugg`, `admin2RejectCat`, `admin2DeleteCat`, `admin2UploadCatBanner`, `admin2RemoveCatBanner` |
+   432→| `business-detail.js` | Ficha negocio cliente | — |
+   433→| `business-form.js` | Formulario crear/editar negocio | — |
+   434→| `properties-search.js` | Búsqueda inmuebles | — |
+   435→| `property-form.js` | Form crear inmueble | — |
+   436→| `property-detail.js` | Ficha inmueble | — |
+   437→| `map.js` / `home-map.js` | Mapa Leaflet | — |
+   438→| `chat.js` | Chat widget | — |
+   439→| `ai-chatbot.js` | Chatbot IA en home | — |
+   440→| `seller.js` | Panel vendedor | — |
+   441→| `review-widget.js` | Widget de reseñas | — |
+   442→| `dynamic-categories.js` | Carga categorías dinámicas en home | — |
+   443→| `weather.js` | Widget clima | — |
+   444→
+   445→### Cliente API (`js/app.js`)
+   446→
+   447→```js
+   448→const API = '/api';
+   449→const api = {
+   450→    get(url)        → apiCall(url, { method: 'GET' }),
+   451→    post(url, data) → apiCall(url, { method: 'POST', body: JSON.stringify(data) }),
+   452→    put(url, data)  → apiCall(url, { method: 'PUT', body: JSON.stringify(data) }),
+   453→    delete(url)     → apiCall(url, { method: 'DELETE' }),
+   454→    postFormData(url, formData) → apiCall(url, { method: 'POST', body: formData }),
+   455→};
+   456→```
+   457→
+   458→Inyecta automáticamente el header `Authorization: Bearer <token>` si existe en `localStorage`.
+   459→
+   460→---
+   461→
+   462→## 🚀 Deploy
+   463→
+   464→### ⚠️ IMPORTANTE: Cloudflare Pages NO está conectado a GitHub
+   465→
+   466→El proyecto `en-santiago` en Cloudflare Pages está en modo "direct upload" (source = None). Esto significa que hacer `git push` a GitHub **NO despliega automáticamente**.
+   467→
+   468→### Cómo hacer deploy
+   469→
+   470→#### Opción A — Wrangler CLI (rápido, recomendado)
+   471→
+   472→```bash
+   473→# Clonar el repo con el último código
+   474→git clone https://github.com/bboymak3/en-santiago.git
+   475→cd en-santiago
+   476→
+   477→# Deploy directo a Cloudflare Pages
+   478→CLOUDFLARE_API_TOKEN="cfat_xxx" \
+   479→CLOUDFLARE_ACCOUNT_ID="08c16b2ef77f748599f3ff7db1e28e94" \
+   480→npx wrangler@latest pages deploy . --project-name=en-santiago --branch=main
+   481→```
+   482→
+   483→#### Opción B — Conectar GitHub a Cloudflare (no hecho aún)
+   484→
+   485→1. `dash.cloudflare.com` → Workers & Pages → en-santiago → Settings → Builds & deployments → Source
+   486→2. "Connect to Git"
+   487→3. Autorizar GitHub, seleccionar `bboymak3/en-santiago`
+   488→4. Production branch: `main`, Build command: (vacío), Destination: `.`
+   489→
+   490→### Verificar deploy
+   491→
+   492→```bash
+   493→# Ver últimos deploys
+   494→curl -X GET "https://api.cloudflare.com/client/v4/accounts/08c16b2ef77f748599f3ff7db1e28e94/pages/projects/en-santiago/deployments?per_page=5" \
+   495→  -H "Authorization: Bearer cfat_xxx" | jq '.result[] | {id, created_on, latest_stage}'
+   496→```
+   497→
+   498→---
+   499→
+   500→## 🔧 Comandos Útiles
+   501→
+   502→### Consultar D1 directo vía API REST
+   503→
+   504→```bash
+   505→curl -X POST "https://api.cloudflare.com/client/v4/accounts/08c16b2ef77f748599f3ff7db1e28e94/d1/database/083ae5ed-b15f-4ff3-abcf-b3a3b666bb79/query" \
+   506→  -H "Authorization: Bearer cfat_xxx" \
+   507→  -H "Content-Type: application/json" \
+   508→  -d '{"sql":"SELECT * FROM categories WHERE is_active=1 ORDER BY name;"}'
+   509→```
+   510→
+   511→### Subir imagen a R2 (vía endpoint)
+   512→
+   513→```bash
+   514→curl -X POST "https://en-santiago.pages.dev/api/upload" \
+   515→  -H "Authorization: Bearer <jwt>" \
+   516→  -F "file=@imagen.jpg" \
+   517→  -F "product_type=business"
+   518→```
+   519→
+   520→### Listar objetos en R2
+   521→
+   522→```bash
+   523→curl -X POST "https://api.cloudflare.com/client/v4/accounts/08c16b2ef77f748599f3ff7db1e28e94/r2/buckets/en-santiago-media/objects/list" \
+   524→  -H "Authorization: Bearer cfat_xxx" \
+   525→  -H "Content-Type: application/json" \
+   526→  -d '{"prefix":"santiago/businesses/","limit":100}'
+   527→```
+   528→
+   529→### Ejecutar migración SQL
+   530→
+   531→```bash
+   532→# Si tienes wrangler instalado
+   533→wrangler d1 execute en-santiago-db --remote --file=scripts/fixes/fix-category-slugs.sql
+   534→
+   535→# O vía API REST (mejor para statements múltiples)
+   536→# Ver /home/z/my-project/scripts/run-d1-migration.py como referencia
+   537→```
+   538→
+   539→---
+   540→
+   541→## 🐛 Bugs Conocidos y Fixes Aplicados (Esta Sesión)
+   542→
+   543→### Bug 1: Slug de categoría no se regenera al editar nombre
+   544→
+   545→**Síntoma**: Al renombrar una categoría (ej: "Tapizados de Volantes" → "Tapizar IA"), el `slug` en DB seguía siendo el viejo, rompiendo `/categoria/:slug`.
+   546→
+   547→**Fix**: `functions/api/categories/[id].js` ahora regenera slug cuando `name` cambia. `functions/categoria/[slug].js` hace fallback por `slugify(name)` + 301 redirect. Modal de edición en `js/admin.js`.
+   548→
+   549→**Commit**: `a511933`
+   550→
+   551→### Bug 2: Cambiar categoría de un negocio rompía la URL vieja
+   552→
+   553→**Síntoma**: Al mover un negocio de "Otros" a "Tapizado de Volantes", la URL vieja `/servicios-varios/otros/mi-negocio` daba 404 porque la query SQL filtraba por `c.id = ?` (la categoría de la URL vieja).
+   554→
+   555→**Fix**: `functions/[tipo]/[categoria]/[slug].js` ya no filtra por `c.id`. Busca solo por `slug` + `status='approved'`. Si la URL no coincide con los datos actuales, redirect 301 a la URL canónica.
+   556→
+   557→**Commit**: `6258cad`
+   558→
+   559→### Bug 3: Descripción del negocio mal ubicada y sin justificar
+   560→
+   561→**Síntoma**: La descripción aparecía arriba de la galería, sin justificar, con degradado que ocultaba el texto.
+   562→
+   563→**Fix**: `functions/_lib/render-business.js` mueve la descripción a sección "Sobre el Negocio" después del botón "Sitio Web". CSS `text-align: justify`. Sin collapse ni degradado.
+   564→
+   565→**Commits**: `a468ab6`, `6e27b53`
+   566→
+   567→### Bug 4: Categorías duplicadas
+   568→
+   569→**Síntoma**: Existían "Talleres Mecánicos" (id=6) y "Lavaderos de Autos" (id=7), y se crearon "Taller Mecánico" (id=24) y "Auto Lavado" (id=23) como reemplazos.
+   570→
+   571→**Fix**: Desactivadas las viejas (`is_active = 0`). Las nuevas ya están activas. Nueva categoría "Spad-de-Uñas" (id=27) agregada.
+   572→
+   573→### Bug 5: 'Token inválido o expirado' al subir fotos
+   574→
+   575→**Síntoma**: `dashboard.js` tenía 8 lugares donde buscaba el token con `localStorage.getItem('auth_token') || localStorage.getItem('token')` pero el login guarda el token bajo `'ensantiago_token'`.
+   576→
+   577→**Fix**: las 8 líneas ahora usan `getToken()` (función global de `app.js`) con fallback a las 3 keys antiguas.
+   578→
+   579→**Commit**: `e2d5e19`
+   580→
+   581→### Bug 6: 'Error al subir imagen' al editar negocio desde admin-edit-business.html
+   582→
+   583→**Síntoma**: el código llamaba `api.postFormData('/images', fd)` pero esa ruta NO existe.
+   584→
+   585→**Fix**: ahora hace el flujo correcto en 2 pasos: sube archivo a `/api/upload` → registra en DB con `POST /api/images/{businessId}` JSON `{url, is_cover:0}`.
+   586→
+   587→**Commit**: `e2d5e19`
+   588→
+   589→### Bug 7: Admin no tenía premium automáticamente
+   590→
+   591→**Síntoma**: el sistema checkea `plan_type='premium'` para features como WhatsApp, no expiración, prioridad. Pero el admin user estaba con `plan_type='basic'`.
+   592→
+   593→**Fix**: en `login.js`, si el usuario es admin y no tiene premium, se le asigna automáticamente (`UPDATE users SET plan_type='premium', plan_expires_at=NULL`).
+   594→
+   595→**Commit**: `e2d5e19`
+   596→
+   597→### Bug 8: PUT /api/businesses/8 daba error 500 "no such column: custom_jsonld"
+   598→
+   599→**Síntoma**: el backend tenía `custom_jsonld` en `allowedFields` pero la DB NO tenía esa columna.
+   600→
+   601→**Fix doble**:
+   602→1. **DB**: agregada columna `custom_jsonld TEXT` a la tabla `businesses` en D1.
+   603→2. **Backend**: `functions/api/businesses/[id].js` ahora hace UPDATE dentro de try/catch. Si falla por columna faltante, automáticamente hace `ALTER TABLE ADD COLUMN` y reintenta.
+   604→
+   605→**Commit**: `e2d5e19`
+   606→
+   607→### Bug 9: admin-edit-business.html redirigía a login (y luego a dashboard)
+   608→
+   609→**Síntoma**: `TOKEN_KEY = 'meriden-santiago_token'` (typo) que no existe. El token se guardaba bajo `'ensantiago_token'`.
+   610→
+   611→**Fix**: reemplazado por `getToken()` con fallback a las 3 keys correctas.
+   612→
+   613→**Commit**: `7c7edb2`
+   614→
+   615→### Bug 10: Galería de ficha de negocio rediseñada (3 niveles)
+   616→
+   617→**Síntoma**: la galería anterior (slider scrollable) solo mostraba 1-2 fotos a la vez y no permitía ver todas las fotos de forma práctica.
+   618→
+   619→**Fix**: galería con 3 niveles:
+   620→1. **Foto principal grande** (4:3) con badge contador + botón zoom
+   621→2. **Carrusel de miniaturas** debajo (scroll-x, swipe con dedo, miniaturas 97×73px desktop)
+   622→3. **Botón "Ver todas las fotos"** → despliega grid inline con TODAS las fotos
+   623→
+   624→Lightbox con X para cerrar + botones prev/next que navegan (no cierran, no salen de la web).
+   625→
+   626→**Commits**: `716ac91`, `4eb20db`, `22d4bc9`
+   627→
+   628→### Bug 11: Negocios Similares rediseñados como carrusel
+   629→
+   630→**Síntoma**: las tarjetas de "Negocios Similares" usaban el grid 4-columnas con `createBusinessCard()` estándar. El contenido se veía descuadrado y dinámico.
+   631→
+   632→**Fix**: tarjetas verticales fijas centradas en carrusel horizontal desplazable. Logo circular (80px) + nombre + categoría + tipo, todo centrado.
+   633→
+   634→**Commit**: `929e6ba`
+   635→
+   636→### Bug 12: Negocios no aparecían en el mapa
+   637→
+   638→**Síntoma**: los 2 negocios aprobados tenían `lat=NULL` y `lng=NULL` en la DB.
+   639→
+   640→**Fix triple**:
+   641→1. **DB**: geocodificadas las direcciones existentes vía Nominatim (OpenStreetMap, gratis).
+   642→2. **Backend POST /api/businesses**: geocodificación automática al CREAR negocio.
+   643→3. **Backend PUT /api/businesses/[id]**: geocodificación automática al EDITAR negocio.
+   644→
+   645→**Commit**: `53b2e88`
+   646→
+   647→### Bug 13: Mapa lento con 100+ marcadores
+   648→
+   649→**Síntoma**: con 100+ negocios el mapa se ponía lento o no abría, afectando métricas de performance.
+   650→
+   651→**Fix**: 4 optimizaciones:
+   652→1. **Clustering de marcadores** (plugin `leaflet.markercluster@1.5.3`)
+   653→2. **Lazy popup** (HTML del popup solo se genera al hacer click)
+   654→3. **Canvas renderer** (`preferCanvas: true`)
+   655→4. **Paginación del sidebar** (20 cards iniciales + scroll infinito)
+   656→
+   657→**Commit**: `5c2269d`
+   658→
+   659→### Bug 14: Toggles de módulos no funcionaban (medical_enabled, properties_enabled, featured_*)
+   660→
+   661→**Síntoma**: el endpoint `PUT /api/settings` tenía una whitelist que NO incluía `medical_enabled`, `properties_enabled`, ni los `featured_*_enabled`. El backend los rechazaba con "No se proporcionaron claves válidas".
+   662→
+   663→**Fix**: agregados los 8 settings faltantes al `DEFAULT_SETTINGS` en `functions/api/settings/index.js`.
+   664→
+   665→**Commit**: `06419a2`
+   666→
+   667→### Bug 15: SEO incompleto (sitemap, robots, JSON-LD, canonical)
+   668→
+   669→**Síntoma**: sitemap tenía estados de Venezuela, robots.txt con URL incorrecta, faltaban páginas estáticas, sin canonical, JSON-LD incompleto.
+   670→
+   671→**Fix**:
+   672→1. **Sitemap**: eliminado CASE WHEN con estados de Venezuela → slugify dinámico. Agregadas 7 páginas faltantes. `<lastmod>` en estáticas.
+   673→2. **Robots.txt**: URL correcta (`en-santiago.pages.dev`). Agregadas páginas admin en Disallow. Sitemap URL absoluta.
+   674→3. **_Redirects**: eliminadas URLs de Venezuela (holax.com.ve). Eliminado redirect robots.txt que causaba HTML.
+   675→4. **_Headers**: agregados headers SEO para sitemap (XML) y robots (text/plain) + cache 1h.
+   676→5. **JSON-LD**: agregado bloque `WebPage` con `BreadcrumbList` para rich snippets.
+   677→6. **Canonical**: agregado `<link rel="canonical" href="https://en-santiago.pages.dev/">`.
+   678→
+   679→**Commits**: `de48efd`, `34ef9e7`, `246aa82`
+   680→
+   681→---
+   682→
+   683→## 📋 TODO / Pendientes
+   684→
+   685→### Urgentes
+   686→- [ ] Conectar GitHub a Cloudflare Pages (Git integration) para deploy automático
+   687→- [ ] Rotar `JWT_SECRET` (está hardcoded en wrangler.toml)
+   688→- [ ] Activar 2FA en la cuenta de Cloudflare
+   689→- [ ] Revocar tokens comprometidos (PAT GitHub + Cloudflare token filtrados en chat)
+   690→
+   691→### Features pendientes (prometidas en planes.html pero no implementadas)
+   692→- [ ] Límite de productos por plan (4 Emprendedor / 12 Empresa 360)
+   693→- [ ] Límite de fotos por plan (3 Emprendedor / 5 Empresa 360)
+   694→- [ ] Límite de categorías por plan (3 Emprendedor / 6 Empresa 360)
+   695→- [ ] Acceso a Licitaciones (tabla nueva + endpoints + UI)
+   696→- [ ] Acceso a Contactos Directos
+   697→- [ ] Visibilidad Prioritaria en search (boost por plan)
+   698→- [ ] Video interactivo en galería (Empresa 360)
+   699→- [ ] Integrar pasarela de pago (Mercado Pago / WebPay Chile)
+   700→
+   701→### Mejoras técnicas
+   702→- [ ] Eliminar el endpoint `/api/auth/promote-me` en producción (es un backdoor)
+   703→- [ ] Validar que `/api/debug/*` esté protegido con admin en todos los subendpoints
+   704→- [ ] Documentar el sistema de puntos (gamificación) en `points_log`
+   705→- [ ] Documentar el sistema de Facebook import (fb_config, fb_imports)
+   706→- [ ] Implementar Web Workers para procesamiento de datos del mapa (200+ negocios)
+   707→- [ ] Agregar viewport-based loading al mapa (solo cargar markers visibles)
+   708→- [ ] Cache de tiles del mapa en R2
+   709→
+   710→---
+   711→
+   712→## 🆘 Troubleshooting Común
+   713→
+   714→### "El deploy no se ve reflejado en producción"
+   715→
+   716→→ Probablemente Cloudflare Pages no está conectado a GitHub. Hacer deploy manual con `wrangler pages deploy`.
+   717→
+   718→### "Error 500 en endpoint con env.DB"
+   719→
+   720→→ El binding D1 no está configurado en el proyecto de Pages. Verificar en `dash.cloudflare.com → Pages → en-santiago → Settings → Functions → D1 database bindings`.
+   721→
+   722→### "Imagen no carga en producción"
+   723→
+   724→→ Verificar que esté en R2 bucket `en-santiago-media` bajo prefijo `santiago/`. Servir vía `/api/serve?key=...`.
+   725→
+   726→### "No encuentro una categoría en el admin"
+   727→
+   728→→ Verificar `is_active = 1` en DB. Las desactivadas no aparecen ni en admin ni en sitio público.
+   729→
+   730→### "URL canónica de negocio da 404"
+   731→
+   732→→ Verificar que el `slug` del negocio coincida con el de la DB. Si se cambió la categoría, la URL vieja debería hacer redirect 301 a la nueva (ver Bug 2 fix).
+   733→
+   734→---
+   735→
+   736→## 📞 Información de la Cuenta
+   737→
+   738→- **Cloudflare Account**: `Correo36000@gmail.com's Account`
+   739→- **Account ID**: `08c16b2ef77f748599f3ff7db1e28e94`
+   740→- **D1 database ID**: `083ae5ed-b15f-4ff3-abcf-b3a3b666bb79` (binding: `DB`)
+   741→- **R2 bucket**: `en-santiago-media` (binding: `R2`, prefijo: `santiago`)
+   742→- **GitHub repo**: `github.com/bboymak3/en-santiago` (público)
+   743→- **Production URL**: `https://en-santiago.pages.dev`
+   744→
+   745→---
+   746→
+   747→## 🤝 Convenciones para IAs y Nuevas Sesiones
+   748→
+   749→1. **Antes de tocar código**: lee este README completo
+   750→2. **Antes de hacer deploy**: valida sintaxis con `node -c archivo.js`
+   751→3. **Después de hacer deploy**: prueba la URL en producción con `curl -sI`
+   752→4. **Para cambiar D1**: usa la API REST (no `wrangler d1 execute` directamente si no tienes wrangler configurado)
+   753→5. **Para cambiar R2**: usa la API REST o el endpoint `/api/upload`
+   754→6. **Nunca uses tokens pegados en el chat**: créalos nuevos con scope mínimo, úsalos, revócalos
+   755→7. **Slugs**: SIEMPRE se calculan con `slugify()` (ver `functions/api/categories/index.js` para referencia)
+   756→8. **Soft-delete**: las tablas usan `is_active` (1/0). NUNCA hagas `DELETE` físico
+   757→9. **Auth**: usa `requireAdmin(request, env)` para admin-only, `getUserFromRequest` para auth común
+   758→10. **CORS**: todos los endpoints exportan `onRequestOptions` que retorna los headers CORS
+   759→
+   760→---
+   761→
+   762→**Última actualización**: 2026-08-24
+   763→**Mantenido por**: Grupo 360 Soluciones
+   764→

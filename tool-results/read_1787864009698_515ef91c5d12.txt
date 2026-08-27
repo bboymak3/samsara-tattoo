@@ -1,0 +1,1262 @@
+     1→// functions/_lib/render-business.js
+     2→// Shared business page renderer — used by /negocio/[slug] and other section routes
+     3→
+     4→/**
+     5→ * Escape a string for safe HTML attribute / text interpolation.
+     6→ */
+     7→export function escapeHtml(str) {
+     8→  if (!str) return '';
+     9→  return str
+    10→    .replace(/&/g, '&amp;')
+    11→    .replace(/</g, '&lt;')
+    12→    .replace(/>/g, '&gt;')
+    13→    .replace(/"/g, '&quot;')
+    14→    .replace(/'/g, '&#39;');
+    15→}
+    16→
+    17→/**
+    18→ * Escape a string for safe JS single-quoted string interpolation.
+    19→ */
+    20→export function escapeJs(str) {
+    21→  if (!str) return '';
+    22→  return str.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '');
+    23→}
+    24→
+    25→/**
+    26→ * Normalize a social-media handle or partial URL into a full URL.
+    27→ */
+    28→export function normalizeSocialUrl(value, platform) {
+    29→  if (!value) return '';
+    30→  const v = value.trim();
+    31→  if (v.startsWith('http://') || v.startsWith('https://')) return v;
+    32→  let clean = v.replace(/^@/, '');
+    33→  clean = clean.replace(/^(facebook\.com\/?|www\.facebook\.com\/?|facebook\/)/i, '');
+    34→  clean = clean.replace(/^(instagram\.com\/?|www\.instagram\.com\/?|instagram\/)/i, '');
+    35→  clean = clean.replace(/^(x\.com\/?|twitter\.com\/?|www\.twitter\.com\/?|twitter\/)/i, '');
+    36→  clean = clean.replace(/^(tiktok\.com\/?|www\.tiktok\.com\/?|tiktok\/)/i, '');
+    37→  clean = clean.replace(/^(youtube\.com\/?|www\.youtube\.com\/?|youtube\/)/i, '');
+    38→  clean = clean.replace(/^@/, '');
+    39→  switch (platform) {
+    40→    case 'instagram': return `https://www.instagram.com/${clean}`;
+    41→    case 'facebook': return `https://www.facebook.com/${clean}`;
+    42→    case 'twitter': return `https://x.com/${clean}`;
+    43→    case 'tiktok': return `https://www.tiktok.com/@${clean}`;
+    44→    case 'youtube': return `https://www.youtube.com/@${clean}`;
+    45→    default: return v;
+    46→  }
+    47→}
+    48→
+    49→/**
+    50→ * Return an <iframe> or <video> embed string for a given video URL.
+    51→ */
+    52→export function getVideoEmbed(url) {
+    53→  if (!url) return '';
+    54→  // YouTube: youtube.com/watch?v=XXX or youtu.be/XXX
+    55→  const ytMatch = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]+)/);
+    56→  if (ytMatch) return `<iframe src="https://www.youtube.com/embed/${ytMatch[1]}" width="100%" style="aspect-ratio:9/16;" frameborder="0" allowfullscreen></iframe>`;
+    57→  // YouTube Shorts: youtube.com/shorts/XXX
+    58→  const ytShortsMatch = url.match(/youtube\.com\/shorts\/([a-zA-Z0-9_-]+)/);
+    59→  if (ytShortsMatch) return `<iframe src="https://www.youtube.com/embed/${ytShortsMatch[1]}" width="100%" style="aspect-ratio:9/16;" frameborder="0" allowfullscreen></iframe>`;
+    60→  // TikTok: tiktok.com/@user/video/XXX
+    61→  const ttMatch = url.match(/tiktok\.com\/@[^/]+\/video\/(\d+)/);
+    62→  if (ttMatch) return `<iframe src="https://www.tiktok.com/embed/v2/${ttMatch[1]}" width="100%" style="aspect-ratio:9/16;" frameborder="0" allowfullscreen></iframe>`;
+    63→  // Direct video files (R2 uploads): .mp4, .webm, .ogg, .mov
+    64→  if (/\.(mp4|webm|ogg|mov)(\?|$)/i.test(url)) {
+    65→    return `<video src="${escapeHtml(url)}" controls playsinline preload="metadata" style="width:100%;border-radius:12px;background:#000;"></video>`;
+    66→  }
+    67→  // Other URLs: use as-is iframe
+    68→  return `<iframe src="${escapeHtml(url)}" width="100%" style="aspect-ratio:9/16;" frameborder="0" allowfullscreen></iframe>`;
+    69→}
+    70→
+    71→/**
+    72→ * Render the full business detail page HTML and return a Response.
+    73→ *
+    74→ * @param {object}  env           – Cloudflare env (kept for API consistency / future use)
+    75→ * @param {object}  business      – Row from the businesses table
+    76→ * @param {object}  options
+    77→ * @param {string}  [options.pathPrefix]       – e.g. '/servicio/medicina-servicio-medico'
+    78→ * @param {string}  [options.canonicalUrl]      – Full canonical URL (overrides pathPrefix-based)
+    79→ * @param {string}  [options.sectionLabel]      – Breadcrumb label for the section
+    80→ * @param {{name:string,url:string}} [options.categoryBreadcrumb] – Override category breadcrumb
+    81→ * @param {{name:string,url:string}} [options.tipoBreadcrumb] – Breadcrumb for business type
+    82→ * @param {string}  [options.tipoLabel]         – Display label for business type
+    83→ * @returns {Response}
+    84→ */
+    85→export function renderBusinessPage(env, business, options = {}) {
+    86→  const {
+    87→    pathPrefix = null,
+    88→    canonicalUrl = null,
+    89→    categoryBreadcrumb = null,
+    90→    sectionLabel = null,
+    91→    tipoBreadcrumb = null,
+    92→    tipoLabel = null,
+    93→    reviews = [],
+    94→    avgRating = 0,
+    95→    reviewCount = 0,
+    96→  } = options;
+    97→
+    98→  const baseUrl = 'https://en-santiago.pages.dev';
+    99→  const title = business.title || 'Negocio';
+   100→  // Use custom SEO description if provided, otherwise auto-generate
+   101→  const description = business.seo_description
+   102→    ? business.seo_description.substring(0, 160)
+   103→    : business.description
+   104→      ? business.description.substring(0, 160)
+   105→      : `Información sobre ${title} en ${business.city || 'Santiago de Chile'}. Dirección, contacto, servicios y más.`;
+   106→  const imageUrl = business.cover_image || `${baseUrl}/images/En Santiago.png`;
+   107→  const finalCanonical = canonicalUrl || `${baseUrl}${pathPrefix || '/negocio'}/${business.slug}`;
+   108→
+   109→  // Breadcrumb helpers
+   110→  const sectionBreadcrumbText = sectionLabel || 'Negocios';
+   111→  const categoryLinkHtml = categoryBreadcrumb
+   112→    ? `<a href="${escapeHtml(categoryBreadcrumb.url)}">${escapeHtml(categoryBreadcrumb.name)}</a>`
+   113→    : (business.category_name
+   114→        ? `<a href="/categoria/${encodeURIComponent((business.category_name || '').toLowerCase().replace(/[^a-z0-9áéíóúñü]+/g, '-').replace(/^-|-$/g, ''))}">${escapeHtml(business.category_name)}</a>`
+   115→        : '');
+   116→
+   117→  const html = `<!DOCTYPE html>
+   118→<html lang="es">
+   119→<head>
+   120→<!-- Google Tag Manager -->
+   121→<script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+   122→new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+   123→j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+   124→'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+   125→})(window,document,'script','dataLayer','GTM-TMH9V9QQ');</script>
+   126→<!-- End Google Tag Manager -->
+   127→<!-- Google tag (gtag.js) -->
+   128→<script async src="https://www.googletagmanager.com/gtag/js?id=G-RYF2N8ZD15"></script>
+   129→<script>
+   130→  window.dataLayer = window.dataLayer || [];
+   131→  function gtag(){dataLayer.push(arguments);}
+   132→  gtag('js', new Date());
+   133→
+   134→  gtag('config', 'G-RYF2N8ZD15');
+   135→</script>
+   136→    <meta charset="UTF-8">
+   137→    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+   138→    <meta name="description" content="${escapeHtml(description)}">
+   139→    <title>${escapeHtml(title)} - En Santiago | Directorio de Negocios en Santiago de Chile</title>
+   140→    <meta name="robots" content="index, follow">
+   141→    <link rel="canonical" href="${finalCanonical}">
+   142→
+   143→    <!-- Open Graph -->
+   144→    <meta property="og:type" content="business.business">
+   145→    <meta property="og:title" content="${escapeHtml(title)} - En Santiago">
+   146→    <meta property="og:description" content="${escapeHtml(description)}">
+   147→    <meta property="og:image" content="${imageUrl}">
+   148→    <meta property="og:url" content="${finalCanonical}">
+   149→    <meta property="og:site_name" content="En Santiago">
+   150→    <meta property="og:locale" content="es_CL">
+   151→
+   152→    <!-- Twitter Card -->
+   153→    <meta name="twitter:card" content="summary_large_image">
+   154→    <meta name="twitter:title" content="${escapeHtml(title)} - En Santiago">
+   155→    <meta name="twitter:description" content="${escapeHtml(description)}">
+   156→    <meta name="twitter:image" content="${imageUrl}">
+   157→
+   158→    <!-- Location -->
+   159→    <meta property="business:contact_data:street_address" content="${escapeHtml(business.address || '')}">
+   160→    <meta property="business:contact_data:locality" content="${escapeHtml(business.city || '')}">
+   161→    <meta property="business:contact_data:region" content="${escapeHtml(business.state || '')}">
+   162→    <meta property="business:contact_data:country_name" content="${escapeHtml(business.country || 'Santiago de Chile')}">
+   163→
+   164→    <!-- JSON-LD: Rich Snippets -->
+   165→    ${business.custom_jsonld
+   166→      ? '<script type="application/ld+json">' + business.custom_jsonld + '</script>'
+   167→      : '<script type="application/ld+json">' + JSON.stringify((() => {
+   168→      const isMedical = business.category_name && (business.category_name.toLowerCase().includes('médic') || business.category_name.toLowerCase().includes('medic'));
+   169→      const ld = {
+   170→        "@context": "https://schema.org",
+   171→        "@type": isMedical ? "MedicalBusiness" : "LocalBusiness",
+   172→        "name": title,
+   173→        "url": finalCanonical,
+   174→        "image": imageUrl,
+   175→        "description": description
+   176→      };
+   177→      if (business.category_name) ld.category = business.category_name;
+   178→      if (business.especialidad) ld.medicalSpecialty = business.especialidad;
+   179→      const phoneClean = (business.phone || '').replace(/[^0-9]/g, '');
+   180→      const waClean = (business.whatsapp || business.phone || '').replace(/[^0-9]/g, '');
+   181→      if (waClean) ld.telephone = '+' + waClean;
+   182→      if (business.address) {
+   183→        ld.address = {
+   184→          "@type": "PostalAddress",
+   185→          "streetAddress": business.address,
+   186→          "addressLocality": business.city || undefined,
+   187→          "addressRegion": business.state || undefined,
+   188→          "addressCountry": "CL"
+   189→        };
+   190→      }
+   191→      if (business.lat || business.latitude) {
+   192→        ld.geo = {
+   193→          "@type": "GeoCoordinates",
+   194→          "latitude": Number(business.lat || business.latitude),
+   195→          "longitude": Number(business.lng || business.longitude)
+   196→        };
+   197→      }
+   198→      if (business.logo) ld.logo = business.logo;
+   199→      const sameAs = [];
+   200→      if (business.instagram) sameAs.push(normalizeSocialUrl(business.instagram, 'instagram'));
+   201→      if (business.facebook) sameAs.push(normalizeSocialUrl(business.facebook, 'facebook'));
+   202→      if (business.twitter) sameAs.push(normalizeSocialUrl(business.twitter, 'twitter'));
+   203→      if (business.tiktok) sameAs.push(normalizeSocialUrl(business.tiktok, 'tiktok'));
+   204→      if (business.youtube) sameAs.push(normalizeSocialUrl(business.youtube, 'youtube'));
+   205→      if (business.website) sameAs.push(business.website);
+   206→      if (sameAs.length) ld.sameAs = sameAs;
+   207→      if (business.schedule) ld.openingHours = business.schedule;
+   208→      // AggregateRating + Reviews for rich snippets
+   209→      if (reviewCount > 0) {
+   210→        ld.aggregateRating = {
+   211→          "@type": "AggregateRating",
+   212→          "ratingValue": Math.round(avgRating * 10) / 10,
+   213→          "bestRating": 5,
+   214→          "worstRating": 1,
+   215→          "reviewCount": reviewCount
+   216→        };
+   217→        const reviewItems = reviews.filter(r => r.comment).slice(0, 5).map(r => ({
+   218→          "@type": "Review",
+   219→          "author": { "@type": "Person", "name": r.name || 'Anónimo' },
+   220→          "reviewRating": { "@type": "Rating", "ratingValue": r.rating, "bestRating": 5 },
+   221→          "reviewBody": r.comment
+   222→        }));
+   223→        if (reviewItems.length > 0) ld.review = reviewItems;
+   224→      }
+   225→      return ld;
+   226→    })()) + '</script>'
+   227→    }
+   228→    <script type="application/ld+json">${(() => {
+   229→      const crumbs = [
+   230→        { "@type": "ListItem", "position": 1, "name": "Inicio", "item": "https://en-santiago.pages.dev/" },
+   231→        { "@type": "ListItem", "position": 2, "name": sectionBreadcrumbText, "item": "https://en-santiago.pages.dev/search.html" }
+   232→      ];
+   233→      if (categoryBreadcrumb) {
+   234→        crumbs.push({ "@type": "ListItem", "position": 3, "name": categoryBreadcrumb.name, "item": categoryBreadcrumb.url.startsWith('http') ? categoryBreadcrumb.url : "https://en-santiago.pages.dev" + categoryBreadcrumb.url });
+   235→      } else if (business.category_name) {
+   236→        const catSlug = (business.category_name || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+   237→        crumbs.push({ "@type": "ListItem", "position": 3, "name": business.category_name, "item": "https://en-santiago.pages.dev/categoria/" + catSlug });
+   238→      }
+   239→      crumbs.push({ "@type": "ListItem", "position": crumbs.length + 1, "name": title, "item": finalCanonical });
+   240→      return JSON.stringify({ "@context": "https://schema.org", "@type": "BreadcrumbList", "itemListElement": crumbs });
+   241→    })()}</script>
+   242→
+   243→    <link rel="stylesheet" href="/css/styles.css?v=4">
+   244→    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+   245→    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+   246→    <link rel="manifest" href="/manifest.json">
+   247→    <link rel="icon" type="image/jpeg" href="/images/favicon.jpeg">
+   248→    <style>
+   249→/* === Business Ficha - 30% Larger === */
+   250→.business-detail-page .compact-info-card {
+   251→    padding: 22px;
+   252→}
+   253→.business-detail-page .compact-title {
+   254→    font-size: 1.95rem;
+   255→    line-height: 1.35;
+   256→}
+   257→.business-detail-page .compact-address {
+   258→    font-size: 1.14rem;
+   259→    margin-bottom: 12px;
+   260→}
+   261→.business-detail-page .compact-address i {
+   262→    font-size: 1rem;
+   263→}
+   264→.business-detail-page .feature-chips {
+   265→    gap: 10px;
+   266→    margin-bottom: 14px;
+   267→}
+   268→.business-detail-page .feature-chip {
+   269→    padding: 8px 15px;
+   270→    font-size: 0.95rem;
+   271→    gap: 7px;
+   272→}
+   273→.business-detail-page .feature-chip i {
+   274→    font-size: 1rem;
+   275→}
+   276→/* FIX: Badge de Delivery con color azul distintivo */
+   277→.business-detail-page .feature-chip-delivery {
+   278→    background: linear-gradient(135deg, #3b82f6, #2563eb);
+   279→    color: #fff;
+   280→    border: 1px solid #1d4ed8;
+   281→    font-weight: 700;
+   282→}
+   283→.business-detail-page .feature-chip-delivery i {
+   284→    color: #fff;
+   285→    font-size: 1.05rem;
+   286→}
+   287→.business-detail-page .feature-chip-delivery:hover {
+   288→    background: linear-gradient(135deg, #2563eb, #1d4ed8);
+   289→}
+   290→/* FIX: Badge de Servicio a Domicilio con color naranja distintivo */
+   291→.business-detail-page .feature-chip-servicio-domicilio {
+   292→    background: linear-gradient(135deg, #f97316, #ea580c);
+   293→    color: #fff;
+   294→    border: 1px solid #c2410c;
+   295→    font-weight: 700;
+   296→}
+   297→.business-detail-page .feature-chip-servicio-domicilio i {
+   298→    color: #fff;
+   299→    font-size: 1.05rem;
+   300→}
+   301→.business-detail-page .feature-chip-servicio-domicilio:hover {
+   302→    background: linear-gradient(135deg, #ea580c, #c2410c);
+   303→}
+   304→/* FIX: Descripción siempre visible completa, sin collapse ni degradado.
+   305→   Único efecto: justificación del texto dentro del box. */
+   306→.business-detail-page .compact-description {
+   307→    font-size: 1.05rem;
+   308→    line-height: 1.75;
+   309→    text-align: justify;        /* justificación del texto */
+   310→    text-justify: inter-word;
+   311→    hyphens: auto;
+   312→    /* Sin max-height, sin overflow, sin degradado: texto siempre completo */
+   313→}
+   314→.business-detail-page .compact-description p {
+   315→    margin: 0;
+   316→}
+   317→.business-detail-page .compact-description.collapsed {
+   318→    /* Mantener por compatibilidad con JS legacy, pero sin efecto visual */
+   319→    max-height: none;
+   320→    overflow: visible;
+   321→}
+   322→.business-detail-page .compact-description.collapsed::after {
+   323→    /* Sin degradado */
+   324→    content: none;
+   325→    display: none;
+   326→}
+   327→.business-detail-page .compact-top-row {
+   328→    margin-bottom: 8px;
+   329→}
+   330→.business-detail-page .btn-favorite {
+   331→    width: 40px;
+   332→    height: 40px;
+   333→    font-size: 1.15rem;
+   334→}
+   335→.business-detail-page .compact-price {
+   336→    font-size: 2.4rem;
+   337→}
+   338→.business-detail-page .description-toggle {
+   339→    font-size: 1rem;
+   340→    display: none !important;  /* FIX: ocultar botón Leer más, no se usa */
+   341→}
+   342→.business-detail-page .business-section-title {
+   343→    font-size: 1.3rem;
+   344→}
+   345→
+   346→/* Top spacing for ficha */
+   347→.business-detail-page .business-content {
+   348→    padding-top: 10px;
+   349→}
+   350→
+   351→/* === Compact Business Cards (for similar businesses) === */
+   352→/* Hide action buttons in similar section */
+   353→.business-detail-page #similarGrid .business-card-fav,
+   354→.business-detail-page #similarGrid .btn-share-wa-card {
+   355→    display: none !important;
+   356→}
+   357→/* FIX: Negocios Similares rediseñado como carrusel horizontal scrollable.
+   358→   Tarjetas fijas con logo, nombre, categoría y tipo — todo centrado. */
+   359→.business-detail-page #similarGrid {
+   360→    display: flex;
+   361→    gap: 12px;
+   362→    overflow-x: auto;
+   363→    overflow-y: hidden;
+   364→    padding: 8px 4px 16px;
+   365→    scroll-snap-type: x mandatory;
+   366→    -webkit-overflow-scrolling: touch;
+   367→    scrollbar-width: thin;
+   368→    scrollbar-color: #cbd5e1 transparent;
+   369→}
+   370→.business-detail-page #similarGrid::-webkit-scrollbar {
+   371→    height: 6px;
+   372→}
+   373→.business-detail-page #similarGrid::-webkit-scrollbar-track {
+   374→    background: transparent;
+   375→}
+   376→.business-detail-page #similarGrid::-webkit-scrollbar-thumb {
+   377→    background: #cbd5e1;
+   378→    border-radius: 3px;
+   379→}
+   380→.business-detail-page .similar-biz-card {
+   381→    flex-shrink: 0;
+   382→    width: 180px;
+   383→    background: #fff;
+   384→    border: 1px solid #e5e7eb;
+   385→    border-radius: 14px;
+   386→    overflow: hidden;
+   387→    text-decoration: none;
+   388→    color: inherit;
+   389→    scroll-snap-align: start;
+   390→    transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
+   391→    display: flex;
+   392→    flex-direction: column;
+   393→    align-items: center;
+   394→    padding: 14px 12px 12px;
+   395→    text-align: center;
+   396→}
+   397→.business-detail-page .similar-biz-card:hover {
+   398→    transform: translateY(-3px);
+   399→    box-shadow: 0 6px 20px rgba(0,0,0,0.08);
+   400→    border-color: #006EE3;
+   401→}
+   402→.business-detail-page .similar-biz-logo {
+   403→    width: 80px;
+   404→    height: 80px;
+   405→    border-radius: 50%;
+   406→    overflow: hidden;
+   407→    background: #f1f5f9;
+   408→    margin-bottom: 10px;
+   409→    border: 3px solid #f1f5f9;
+   410→    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+   411→    flex-shrink: 0;
+   412→}
+   413→.business-detail-page .similar-biz-card:hover .similar-biz-logo {
+   414→    border-color: #006EE3;
+   415→}
+   416→.business-detail-page .similar-biz-logo img {
+   417→    width: 100%;
+   418→    height: 100%;
+   419→    object-fit: cover;
+   420→    display: block;
+   421→}
+   422→.business-detail-page .similar-biz-info {
+   423→    width: 100%;
+   424→    text-align: center;
+   425→}
+   426→.business-detail-page .similar-biz-name {
+   427→    font-size: 0.85rem;
+   428→    font-weight: 700;
+   429→    color: #0f172a;
+   430→    margin: 0 0 6px;
+   431→    line-height: 1.3;
+   432→    white-space: nowrap;
+   433→    overflow: hidden;
+   434→    text-overflow: ellipsis;
+   435→}
+   436→.business-detail-page .similar-biz-cat {
+   437→    font-size: 0.72rem;
+   438→    color: #006EE3;
+   439→    font-weight: 600;
+   440→    margin-bottom: 3px;
+   441→    display: flex;
+   442→    align-items: center;
+   443→    justify-content: center;
+   444→    gap: 4px;
+   445→    white-space: nowrap;
+   446→    overflow: hidden;
+   447→    text-overflow: ellipsis;
+   448→}
+   449→.business-detail-page .similar-biz-cat i {
+   450→    font-size: 0.65rem;
+   451→}
+   452→.business-detail-page .similar-biz-type {
+   453→    font-size: 0.7rem;
+   454→    color: #64748b;
+   455→    display: flex;
+   456→    align-items: center;
+   457→    justify-content: center;
+   458→    gap: 4px;
+   459→}
+   460→.business-detail-page .similar-biz-type i {
+   461→    font-size: 0.62rem;
+   462→}
+   463→@media (max-width: 640px) {
+   464→    .business-detail-page .similar-biz-card {
+   465→        width: 145px;
+   466→        padding: 12px 10px 10px;
+   467→    }
+   468→    .business-detail-page .similar-biz-logo {
+   469→        width: 68px;
+   470→        height: 68px;
+   471→    }
+   472→    .business-detail-page .similar-biz-name {
+   473→        font-size: 0.78rem;
+   474→    }
+   475→}
+   476→.business-detail-page .business-grid {
+   477→    display: grid;
+   478→    grid-template-columns: repeat(4, 1fr);
+   479→    gap: 10px;
+   480→}
+   481→.business-detail-page .business-card {
+   482→    background: #fff;
+   483→    border-radius: 12px;
+   484→    overflow: hidden;
+   485→    border: 1px solid #e5e7eb;
+   486→    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+   487→    transition: transform 0.2s, box-shadow 0.2s;
+   488→}
+   489→.business-detail-page .business-card:hover {
+   490→    transform: translateY(-2px);
+   491→    box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+   492→}
+   493→.business-detail-page .business-card-image {
+   494→    height: 110px;
+   495→    overflow: hidden;
+   496→    position: relative;
+   497→    background: #f3f4f6;
+   498→}
+   499→.business-detail-page .business-card-image img {
+   500→    width: 100%;
+   501→    height: 100%;
+   502→    object-fit: cover;
+   503→}
+   504→.business-detail-page .business-card-badges {
+   505→    position: absolute;
+   506→    top: 5px;
+   507→    left: 5px;
+   508→    display: flex;
+   509→    gap: 3px;
+   510→    z-index: 2;
+   511→}
+   512→.business-detail-page .business-card-badges .card-badge {
+   513→    font-size: 0.52rem;
+   514→    padding: 2px 6px;
+   515→    border-radius: 5px;
+   516→    font-weight: 600;
+   517→}
+   518→.business-detail-page .business-card-body {
+   519→    padding: 8px 8px 10px;
+   520→    text-align: center;
+   521→}
+   522→.business-detail-page .business-card-title {
+   523→    font-size: 0.72rem;
+   524→    font-weight: 700;
+   525→    color: #1e293b;
+   526→    margin: 0 0 3px;
+   527→    line-height: 1.25;
+   528→    white-space: nowrap;
+   529→    overflow: hidden;
+   530→    text-overflow: ellipsis;
+   531→}
+   532→.business-detail-page .business-card-location {
+   533→    font-size: 0.6rem;
+   534→    color: #94a3b8;
+   535→    margin: 0 auto 2px;
+   536→    display: inline-flex;
+   537→    align-items: center;
+   538→    gap: 3px;
+   539→}
+   540→.business-detail-page .business-card-location i { font-size: 0.52rem; }
+   541→.business-detail-page .business-card-desc {
+   542→    font-size: 0.6rem;
+   543→    color: #b0b8c4;
+   544→    line-height: 1.35;
+   545→    margin: 0;
+   546→    display: -webkit-box;
+   547→    -webkit-line-clamp: 1;
+   548→    -webkit-box-orient: vertical;
+   549→    overflow: hidden;
+   550→    text-align: center;
+   551→}
+   552→.business-detail-page .business-card-link {
+   553→    text-decoration: none;
+   554→    color: inherit;
+   555→    display: block;
+   556→}
+   557→
+   558→/* === Compact Product Cards (for business products) === */
+   559→.products-grid {
+   560→    display: grid;
+   561→    grid-template-columns: repeat(3, 1fr);
+   562→    gap: 10px;
+   563→}
+   564→.product-card {
+   565→    background: #fff;
+   566→    border-radius: 10px;
+   567→    overflow: hidden;
+   568→    border: 1px solid #e5e7eb;
+   569→    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+   570→    transition: transform 0.2s, box-shadow 0.2s;
+   571→    text-decoration: none;
+   572→    color: inherit;
+   573→}
+   574→.product-card:hover {
+   575→    transform: translateY(-2px);
+   576→    box-shadow: 0 3px 10px rgba(0,0,0,0.1);
+   577→    border-color: #006EE3;
+   578→}
+   579→.product-card img {
+   580→    width: 100%;
+   581→    height: 120px;
+   582→    object-fit: cover;
+   583→}
+   584→.product-card-body {
+   585→    padding: 8px 10px 10px;
+   586→}
+   587→.product-card-name {
+   588→    font-weight: 600;
+   589→    font-size: 0.75rem;
+   590→    margin-bottom: 3px;
+   591→    white-space: nowrap;
+   592→    overflow: hidden;
+   593→    text-overflow: ellipsis;
+   594→    color: #1e293b;
+   595→}
+   596→.product-card-price {
+   597→    color: #006EE3;
+   598→    font-weight: 700;
+   599→    font-size: 0.82rem;
+   600→}
+   601→
+   602→/* Section styling */
+   603→.business-detail-page .section {
+   604→    margin-top: 24px;
+   605→}
+   606→.business-detail-page .section-header {
+   607→    display: flex;
+   608→    justify-content: space-between;
+   609→    align-items: center;
+   610→    margin-bottom: 14px;
+   611→}
+   612→.business-detail-page .section-title {
+   613→    font-size: 1rem;
+   614→    font-weight: 700;
+   615→    color: #0f172a;
+   616→}
+   617→
+   618→/* Compact gallery */
+   619→.business-detail-page .gallery-main {
+   620→    aspect-ratio: 16/9;
+   621→    max-height: 300px;
+   622→}
+   623→
+   624→/* FIX: Galería con foto principal grande + carrusel de miniaturas + grid expandible */
+   625→.business-detail-page .business-gallery {
+   626→    margin: 16px 0;
+   627→    background: #fff;
+   628→    border-radius: 14px;
+   629→    overflow: hidden;
+   630→    padding: 0;
+   631→}
+   632→
+   633→/* 1. Foto principal GRANDE */
+   634→.business-detail-page .gallery-main-wrap {
+   635→    position: relative;
+   636→    width: 100%;
+   637→    aspect-ratio: 4/3;
+   638→    background: #0f172a;
+   639→    overflow: hidden;
+   640→    cursor: zoom-in;
+   641→}
+   642→.business-detail-page .gallery-main-wrap .gallery-main-img {
+   643→    width: 100%;
+   644→    height: 100%;
+   645→    object-fit: cover;
+   646→    display: block;
+   647→    transition: transform 0.3s ease;
+   648→}
+   649→.business-detail-page .gallery-main-wrap:hover .gallery-main-img {
+   650→    transform: scale(1.02);
+   651→}
+   652→.business-detail-page .gallery-zoom-btn {
+   653→    position: absolute;
+   654→    top: 12px;
+   655→    right: 12px;
+   656→    background: rgba(0,0,0,0.6);
+   657→    color: #fff;
+   658→    border: none;
+   659→    width: 40px;
+   660→    height: 40px;
+   661→    border-radius: 50%;
+   662→    cursor: pointer;
+   663→    font-size: 1rem;
+   664→    display: flex;
+   665→    align-items: center;
+   666→    justify-content: center;
+   667→    transition: background 0.2s;
+   668→    backdrop-filter: blur(4px);
+   669→}
+   670→.business-detail-page .gallery-zoom-btn:hover {
+   671→    background: rgba(0,0,0,0.8);
+   672→}
+   673→.business-detail-page .gallery-counter-badge {
+   674→    position: absolute;
+   675→    bottom: 12px;
+   676→    right: 12px;
+   677→    background: rgba(0,0,0,0.6);
+   678→    color: #fff;
+   679→    font-size: 0.8rem;
+   680→    font-weight: 600;
+   681→    padding: 4px 12px;
+   682→    border-radius: 12px;
+   683→    backdrop-filter: blur(4px);
+   684→}
+   685→
+   686→/* 2. Carrusel de miniaturas (scroll-x, swipe con dedo) */
+   687→.business-detail-page .gallery-thumbs {
+   688→    display: flex;
+   689→    gap: 6px;
+   690→    overflow-x: auto;
+   691→    overflow-y: hidden;
+   692→    padding: 10px 12px;
+   693→    scroll-snap-type: x mandatory;
+   694→    -webkit-overflow-scrolling: touch;
+   695→    scrollbar-width: thin;
+   696→    scrollbar-color: #cbd5e1 transparent;
+   697→    background: #f8fafc;
+   698→}
+   699→.business-detail-page .gallery-thumbs::-webkit-scrollbar {
+   700→    height: 6px;
+   701→}
+   702→.business-detail-page .gallery-thumbs::-webkit-scrollbar-track {
+   703→    background: transparent;
+   704→}
+   705→.business-detail-page .gallery-thumbs::-webkit-scrollbar-thumb {
+   706→    background: #cbd5e1;
+   707→    border-radius: 3px;
+   708→}
+   709→.business-detail-page .gallery-thumb {
+   710→    flex-shrink: 0;
+   711→    width: 97px;   /* FIX: +35% (antes 72px) */
+   712→    height: 73px;  /* FIX: +35% (antes 54px) */
+   713→    border-radius: 8px;
+   714→    overflow: hidden;
+   715→    cursor: pointer;
+   716→    border: 2px solid transparent;
+   717→    scroll-snap-align: start;
+   718→    transition: border-color 0.2s, transform 0.2s;
+   719→    background: #e2e8f0;
+   720→}
+   721→.business-detail-page .gallery-thumb:hover {
+   722→    transform: translateY(-2px);
+   723→}
+   724→.business-detail-page .gallery-thumb.active {
+   725→    border-color: #006EE3;
+   726→}
+   727→.business-detail-page .gallery-thumb img {
+   728→    width: 100%;
+   729→    height: 100%;
+   730→    object-fit: cover;
+   731→    display: block;
+   732→}
+   733→
+   734→/* 3. Botón "Ver todas las fotos" */
+   735→.business-detail-page .gallery-actions {
+   736→    padding: 0 12px 12px;
+   737→    background: #f8fafc;
+   738→}
+   739→.business-detail-page .gallery-view-all-btn {
+   740→    width: 100%;
+   741→    background: #006EE3;
+   742→    color: #fff;
+   743→    border: none;
+   744→    border-radius: 10px;
+   745→    padding: 12px 16px;
+   746→    cursor: pointer;
+   747→    font-size: 0.9rem;
+   748→    font-weight: 600;
+   749→    display: inline-flex;
+   750→    align-items: center;
+   751→    justify-content: center;
+   752→    gap: 8px;
+   753→    transition: background 0.2s;
+   754→}
+   755→.business-detail-page .gallery-view-all-btn:hover {
+   756→    background: #0056b3;
+   757→}
+   758→.business-detail-page .gallery-view-all-btn.expanded {
+   759→    background: #64748b;
+   760→}
+   761→
+   762→/* 4. Grid con TODAS las fotos (se despliega inline) */
+   763→.business-detail-page .gallery-all-grid {
+   764→    display: grid;
+   765→    grid-template-columns: repeat(3, 1fr);
+   766→    gap: 4px;
+   767→    padding: 12px;
+   768→    background: #f8fafc;
+   769→}
+   770→.business-detail-page .gallery-all-grid img {
+   771→    width: 100%;
+   772→    aspect-ratio: 1/1;
+   773→    object-fit: cover;
+   774→    border-radius: 8px;
+   775→    cursor: zoom-in;
+   776→    transition: transform 0.2s;
+   777→}
+   778→.business-detail-page .gallery-all-grid img:hover {
+   779→    transform: scale(1.03);
+   780→}
+   781→@media (max-width: 640px) {
+   782→    .business-detail-page .gallery-all-grid {
+   783→        grid-template-columns: repeat(2, 1fr);
+   784→    }
+   785→    .business-detail-page .gallery-thumb {
+   786→        width: 86px;   /* FIX: +35% (antes 64px) */
+   787→        height: 65px;  /* FIX: +35% (antes 48px) */
+   788→    }
+   789→}
+   790→
+   791→/* Lightbox fullscreen con X para cerrar + botones prev/next que navegan */
+   792→.business-detail-page .lightbox {
+   793→    position: fixed;
+   794→    inset: 0;
+   795→    background: rgba(0,0,0,0.95);
+   796→    z-index: 9999;
+   797→    display: flex;
+   798→    align-items: center;
+   799→    justify-content: center;
+   800→    padding: 16px;
+   801→}
+   802→.business-detail-page .lightbox.hidden {
+   803→    display: none;
+   804→}
+   805→.business-detail-page .lightbox-close {
+   806→    position: absolute;
+   807→    top: 16px;
+   808→    right: 16px;
+   809→    background: rgba(255,255,255,0.1);
+   810→    color: #fff;
+   811→    border: none;
+   812→    width: 44px;
+   813→    height: 44px;
+   814→    border-radius: 50%;
+   815→    cursor: pointer;
+   816→    font-size: 1.5rem;
+   817→    display: flex;
+   818→    align-items: center;
+   819→    justify-content: center;
+   820→    transition: background 0.2s;
+   821→}
+   822→.business-detail-page .lightbox-close:hover {
+   823→    background: rgba(255,255,255,0.2);
+   824→}
+   825→.business-detail-page .lightbox-nav {
+   826→    position: absolute;
+   827→    top: 50%;
+   828→    transform: translateY(-50%);
+   829→    background: rgba(255,255,255,0.1);
+   830→    color: #fff;
+   831→    border: none;
+   832→    width: 48px;
+   833→    height: 48px;
+   834→    border-radius: 50%;
+   835→    cursor: pointer;
+   836→    font-size: 1.2rem;
+   837→    display: flex;
+   838→    align-items: center;
+   839→    justify-content: center;
+   840→    transition: background 0.2s;
+   841→}
+   842→.business-detail-page .lightbox-nav:hover {
+   843→    background: rgba(255,255,255,0.2);
+   844→}
+   845→.business-detail-page .lightbox-prev {
+   846→    left: 16px;
+   847→}
+   848→.business-detail-page .lightbox-next {
+   849→    right: 16px;
+   850→}
+   851→.business-detail-page .lightbox-img {
+   852→    max-width: 95vw;
+   853→    max-height: 85vh;
+   854→    object-fit: contain;
+   855→    border-radius: 8px;
+   856→}
+   857→.business-detail-page .lightbox-counter {
+   858→    position: absolute;
+   859→    bottom: 24px;
+   860→    left: 50%;
+   861→    transform: translateX(-50%);
+   862→    color: #fff;
+   863→    font-size: 0.9rem;
+   864→    background: rgba(0,0,0,0.5);
+   865→    padding: 6px 16px;
+   866→    border-radius: 20px;
+   867→}
+   868→
+   869→@media (max-width: 640px) {
+   870→    .business-detail-page .business-grid {
+   871→        grid-template-columns: repeat(2, 1fr);
+   872→        gap: 8px;
+   873→    }
+   874→    .business-detail-page .business-card-image {
+   875→        height: 85px;
+   876→    }
+   877→    .business-detail-page .business-card-body {
+   878→        padding: 6px 5px 8px;
+   879→    }
+   880→    .products-grid {
+   881→        grid-template-columns: repeat(2, 1fr);
+   882→        gap: 8px;
+   883→    }
+   884→    .product-card img {
+   885→        height: 100px;
+   886→    }
+   887→}
+   888→.jobs-list .job-item {
+   889→    background: #fff;
+   890→    border: 1px solid #e5e7eb;
+   891→    border-radius: 10px;
+   892→    padding: 16px;
+   893→    margin-bottom: 12px;
+   894→    display: flex;
+   895→    align-items: center;
+   896→    gap: 14px;
+   897→}
+   898→.job-item-icon {
+   899→    width: 44px;
+   900→    height: 44px;
+   901→    border-radius: 10px;
+   902→    background: #eff6ff;
+   903→    color: #1a73e8;
+   904→    display: flex;
+   905→    align-items: center;
+   906→    justify-content: center;
+   907→    font-size: 1.1rem;
+   908→    flex-shrink: 0;
+   909→}
+   910→.job-item-info {
+   911→    flex: 1;
+   912→    min-width: 0;
+   913→}
+   914→.job-item-title {
+   915→    font-weight: 600;
+   916→    font-size: 0.95rem;
+   917→    margin-bottom: 2px;
+   918→}
+   919→.job-item-meta {
+   920→    font-size: 0.8rem;
+   921→    color: #6b7280;
+   922→}
+   923→.services-list .service-item {
+   924→    background: #fff;
+   925→    border: 1px solid #e5e7eb;
+   926→    border-radius: 10px;
+   927→    padding: 16px 20px;
+   928→    margin-bottom: 12px;
+   929→    border-left: 4px solid #f59e0b;
+   930→}
+   931→.service-item h3 {
+   932→    font-size: 1rem;
+   933→    font-weight: 600;
+   934→    margin-bottom: 6px;
+   935→    color: #1f2937;
+   936→}
+   937→.service-item p {
+   938→    font-size: 0.88rem;
+   939→    color: #6b7280;
+   940→    line-height: 1.5;
+   941→    margin: 0;
+   942→}
+   943→.section-link {
+   944→    font-size: 0.85rem;
+   945→    color: #1a73e8;
+   946→    text-decoration: none;
+   947→    font-weight: 600;
+   948→}
+   949→.section-link:hover {
+   950→    text-decoration: underline;
+   951→}
+   952→</style>
+   953→</head>
+   954→<body>
+   955→<!-- Google Tag Manager (noscript) -->
+   956→<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-TMH9V9QQ"
+   957→height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+   958→<!-- End Google Tag Manager (noscript) -->
+   959→    <!-- Navigation -->
+   960→    <nav class="navbar" id="navbar">
+   961→        <div class="nav-container">
+   962→            <a href="/index.html" class="nav-logo">
+   963→                <img src="/images/favicon.jpeg" alt="En Santiago" style="height:32px;width:auto;border-radius:6px;margin-right:4px;">
+   964→                <span class="brand-name"><span id="brandCity"></span> En Santiago</span>
+   965→            </a>
+   966→            <div class="location-selector" id="locationSelector">
+   967→                <button class="location-btn" id="locationBtn" aria-label="Seleccionar ubicación">
+   968→                    <i class="fas fa-map-marker-alt"></i>
+   969→                    <span class="location-label" id="locationLabel">Todo Santiago de Chile</span>
+   970→                    <i class="fas fa-chevron-down"></i>
+   971→                </button>
+   972→                <div class="location-dropdown hidden" id="locationDropdown">
+   973→                    <div class="location-search">
+   974→                        <input type="text" id="locationSearchInput" placeholder="Buscar comuna..." autocomplete="off">
+   975→                    </div>
+   976→                    <div class="location-option" data-state="" data-city="">
+   977→                        <i class="fas fa-globe-americas"></i>
+   978→                        <span>Todo Santiago de Chile</span>
+   979→                    </div>
+   980→                    <div class="location-divider"></div>
+   981→                    <div class="location-list" id="locationList"></div>
+   982→                </div>
+   983→            </div>
+   984→            <button class="nav-toggle" id="navToggle" aria-label="Abrir menú">
+   985→                <i class="fas fa-bars"></i>
+   986→            </button>
+   987→            <ul class="nav-menu" id="navMenu">
+   988→                <li><a href="/index.html" class="nav-link">Inicio</a></li>
+   989→                <li><a href="/search.html" class="nav-link">Negocios</a></li>
+   990→                <li><a href="/map.html" class="nav-link">Mapa</a></li>
+   991→                <li><a href="/entretenimiento.html" class="nav-link">Entretenimiento</a></li>
+   992→                <li><a href="/empleo.html" class="nav-link">Empleo</a></li>
+   993→                <li class="nav-dropdown">
+   994→                    <button class="nav-dropdown-toggle" aria-label="Más opciones">Más <i class="fas fa-chevron-down"></i></button>
+   995→                    <ul class="nav-dropdown-menu">
+   996→                        <li><a href="/marketplace.html" class="nav-link"><i class="fas fa-shopping-bag"></i> Marketplace</a></li>
+   997→                        <li class="nav-dropdown-divider"></li>
+   998→                        <li><a href="/emergencia.html" class="nav-link" style="color:#dc3545;"><i class="fas fa-exclamation-triangle"></i> Emergencias</a></li>
+   999→                    </ul>
+  1000→                </li>
+  1001→                <li id="navLoginItem"><a href="/login.html" class="nav-link nav-btn">Login</a></li>
+  1002→                <li id="navUserItem" class="nav-user hidden">
+  1003→                    <a href="/dashboard.html" class="nav-link" id="navUserName"><i class="fas fa-user-circle"></i> Mi Cuenta</a>
+  1004→                    <button class="nav-link btn-logout" id="navLogout"><i class="fas fa-sign-out-alt"></i> Salir</button>
+  1005→                </li>
+  1006→                <li class="nav-mobile-cta">
+  1007→                    <a href="/marketplace.html" class="nav-mobile-cta-marketplace"><i class="fas fa-shopping-bag"></i> Marketplace</a>
+  1008→                </li>
+  1009→            </ul>
+  1010→        </div>
+  1011→    </nav>
+  1012→
+  1013→    <!-- Business Detail -->
+  1014→    <main class="business-detail-page">
+  1015→        <div class="container">
+  1016→            <nav class="breadcrumb" aria-label="Breadcrumb">
+  1017→                <a href="/index.html"><i class="fas fa-home"></i> Inicio</a>
+  1018→                <a href="/search.html">${escapeHtml(sectionBreadcrumbText)}</a>
+  1019→                ${categoryLinkHtml}
+  1020→                <span id="breadcrumbTitle">${escapeHtml(title)}</span>
+  1021→            </nav>
+  1022→
+  1023→            <div class="loading-spinner" id="businessLoading">
+  1024→                <i class="fas fa-spinner fa-spin fa-3x"></i>
+  1025→                <p>Cargando negocio...</p>
+  1026→            </div>
+  1027→
+  1028→            <div class="error-state hidden" id="businessError">
+  1029→                <i class="fas fa-exclamation-circle fa-3x"></i>
+  1030→                <h2>Negocio no encontrado</h2>
+  1031→                <p>El negocio que buscas no existe o ha sido eliminado.</p>
+  1032→                <a href="/search.html" class="btn btn-primary">Explorar Negocios</a>
+  1033→            </div>
+  1034→
+  1035→            <div class="business-content hidden" id="businessContent">
+  1036→                <!-- Banner de Portada (tipo Facebook) -->
+  1037→                <div id="businessBannerWrap" style="display:none;margin:-22px -22px 0;border-radius:16px 16px 0 0;overflow:hidden;position:relative;max-height:420px;min-height:220px;background:linear-gradient(135deg,#1e3a5f,#2563eb,#7c3aed);">
+  1038→                    <img id="businessBanner" src="" alt="Portada" style="width:100%;height:100%;object-fit:cover;display:block;">
+  1039→                </div>
+  1040→
+  1041→                <!-- Logo (se superpone sobre el banner si existe) -->
+  1042→                <div id="businessLogoWrap" style="display:none;text-align:center;padding:24px 0 8px;${business.banner ? 'margin-top:-60px;position:relative;z-index:2;' : 'margin-bottom:24px;'}">
+  1043→                    <img id="businessLogo" src="" alt="Logo" style="max-height:200px;max-width:420px;object-fit:contain;border-radius:12px;box-shadow:0 2px 16px rgba(0,0,0,0.10);${business.banner ? 'border:4px solid #fff;' : ''}">
+  1044→                </div>
+  1045→
+  1046→                <div class="compact-info-card">
+  1047→                    <div class="compact-top-row">
+  1048→                        <div class="compact-price-row"><span id="propDetailBadges"></span></div>
+  1049→                        <button class="btn-favorite" id="btnFavorite" aria-label="Agregar a favoritos" data-business-id=""><i class="far fa-heart"></i></button>
+  1050→                    </div>
+  1051→                    <h1 class="compact-title" id="propDetailTitle">${escapeHtml(title)}</h1>
+  1052→                    <div class="compact-price" id="propDetailPrice" style="display:none;">--</div>
+  1053→                    <div class="compact-address" id="propDetailLocation">
+  1054→                        <i class="fas fa-map-marker-alt"></i> <span>${escapeHtml(business.city || '')}${business.state ? ', ' + escapeHtml(business.state) : ''}</span>
+  1055→                    </div>
+  1056→                    <div class="feature-chips">
+  1057→                        <div class="feature-chip" id="statStateCityWrap" title="Comuna / Ciudad"><i class="fas fa-map-marker-alt"></i> <span id="statStateCity">${escapeHtml((business.city || '') + (business.state ? ', ' + business.state : ''))}</span></div>
+  1058→                        <div class="feature-chip" id="statCategoriaWrap" title="Categoría"><i class="fas fa-tag"></i> <span id="statCategoria">${escapeHtml(business.category_name || '--')}</span></div>
+  1059→                        ${reviewCount > 0 ? `<div class="feature-chip" style="background:linear-gradient(135deg,#fff8e1,#fff3cd);color:#f57f17;border:1px solid #ffd54f;" title="Calificación"><i class="fas fa-star" style="color:#ffc107;"></i> <span>${Math.round(avgRating * 10) / 10} (${reviewCount} reseña${reviewCount !== 1 ? 's' : ''})</span></div>` : ''}
+  1060→                        ${business.especialidad ? `<div class="feature-chip" style="background:linear-gradient(135deg,#e74c3c,#c0392b);color:#fff;" title="Especialidad"><i class="fas fa-stethoscope"></i> <span>${escapeHtml(business.especialidad)}</span></div>` : ''}
+  1061→                        <div class="feature-chip" id="statScheduleWrap" style="display:none;" title="Horario"><i class="fas fa-clock"></i> <span id="statSchedule">--</span></div>
+  1062→                        <div class="feature-chip" id="statPhoneWrap" style="display:none;" title="Teléfono"><i class="fas fa-phone"></i> <span id="statPhone">--</span></div>
+  1063→                        <div class="feature-chip" id="statWhatsAppWrap" style="display:none;" title="WhatsApp"><i class="fab fa-whatsapp"></i> <span id="statWhatsApp">WhatsApp</span></div>
+  1064→                        <div class="feature-chip" id="statFeatureParking" style="display:none;" title="Estacionamiento"><i class="fas fa-parking"></i> <span>Estacionamiento</span></div>
+  1065→                        <div class="feature-chip" id="statFeatureWifi" style="display:none;" title="WiFi"><i class="fas fa-wifi"></i> <span>WiFi</span></div>
+  1066→                        <div class="feature-chip" id="statFeatureCards" style="display:none;" title="Acepta tarjetas"><i class="fas fa-credit-card"></i> <span>Tarjetas</span></div>
+  1067→                        <div class="feature-chip feature-chip-delivery" id="statFeatureDelivery" style="display:none;" title="Delivery / Servicio a Domicilio"><i class="fas fa-motorcycle"></i> <span>Delivery</span></div>
+  1068→                        <div class="feature-chip feature-chip-servicio-domicilio" id="statFeatureServicioDomicilio" style="display:none;" title="Servicio a Domicilio"><i class="fas fa-home"></i> <span>Servicio a Domicilio</span></div>
+  1069→                        <div class="feature-chip" id="statFeatureOutdoor" style="display:none;" title="Área al aire libre"><i class="fas fa-umbrella-beach"></i> <span>Exterior</span></div>
+  1070→                    </div>
+  1071→                    <!-- FIX: La descripción se movió ABAJO del botón "Sitio Web"
+  1072→                         para que el flujo sea: badges → título → ubicación → chips →
+  1073→                         [sección contactar] → [sección redes y web con botón Sitio Web] →
+  1074→                         DESCRIPCIÓN completa justificada → galería → ... -->
+  1075→                    <button class="description-toggle" id="descriptionToggle" style="display:none;">Leer más <i class="fas fa-chevron-down"></i></button>
+  1076→                </div>
+  1077→
+  1078→                <div class="business-gallery" id="businessGallery">
+  1079→                    <!-- FIX: Galería con 3 niveles:
+  1080→                         1. Foto principal GRANDE arriba (click → lightbox)
+  1081→                         2. Carrusel de miniaturas abajo con TODAS las fotos (scroll-x, swipe con dedo)
+  1082→                         3. Botón "Ver todas las fotos" → despliega grid con todas las fotos inline
+  1083→                    -->
+  1084→                    <div class="gallery-main-wrap" id="galleryMainWrap">
+  1085→                        <img id="mainImage" src="" alt="" class="gallery-main-img">
+  1086→                        <button class="gallery-zoom-btn" id="galleryZoomBtn" title="Ver en grande">
+  1087→                            <i class="fas fa-expand"></i>
+  1088→                        </button>
+  1089→                        <div class="gallery-counter-badge">
+  1090→                            <span id="galleryCurrent">1</span> / <span id="galleryTotal">1</span>
+  1091→                        </div>
+  1092→                    </div>
+  1093→                    <div class="gallery-thumbs" id="galleryThumbs">
+  1094→                        <!-- Miniaturas generadas por JS, desplazables con scroll-x -->
+  1095→                    </div>
+  1096→                    <div class="gallery-actions">
+  1097→                        <button class="gallery-view-all-btn" id="galleryViewAllBtn" style="display:none;">
+  1098→                            <i class="fas fa-images"></i> Ver todas las fotos
+  1099→                        </button>
+  1100→                    </div>
+  1101→                    <div class="gallery-all-grid" id="galleryAllGrid" style="display:none;">
+  1102→                        <!-- Grid con TODAS las fotos, se despliega al hacer click en "Ver todas" -->
+  1103→                    </div>
+  1104→                    <div class="gallery-badges" id="galleryBadges"></div>
+  1105→                </div>
+  1106→
+  1107→                <div class="business-section hidden" id="featuresSection">
+  1108→                    <h2 class="business-section-title">Características</h2>
+  1109→                    <div class="features-list" id="featuresList"></div>
+  1110→                </div>
+  1111→
+  1112→                <div class="business-section map-section-wrapper hidden" id="mapSection">
+  1113→                    <h2 class="business-section-title">Ubicación</h2>
+  1114→                    <div class="business-map" id="businessMap"></div>
+  1115→                    <button class="open-map-modal-btn" id="openMapModalBtn"><i class="fas fa-expand"></i> Ver en Mapa Completo</button>
+  1116→                </div>
+  1117→
+  1118→                <div class="business-section contact-section">
+  1119→                    <h2 class="business-section-title">Contactar al Negocio</h2>
+  1120→                    <div class="contact-actions" id="contactActions">
+  1121→                        <a href="#" class="btn btn-whatsapp btn-full btn-lg" id="mainWhatsApp" style="display:none;" target="_blank" rel="noopener"><i class="fab fa-whatsapp"></i> Contactar por WhatsApp</a>
+  1122→                        <a href="#" class="btn btn-full btn-lg" id="emailContactBtn" style="display:none;background:linear-gradient(135deg,#2563eb,#3b82f6);color:#fff;font-weight:600;border-radius:12px;text-align:center;text-decoration:none;padding:14px 24px;font-size:1rem;"><i class="fas fa-envelope"></i> Contactar por Email</a>
+  1123→                        ${business.google_maps_url ? `<a href="${business.google_maps_url}" target="_blank" rel="noopener" class="btn btn-full btn-lg" style="display:block;margin-top:8px;background:linear-gradient(135deg,#4285F4,#34A853,#FBBC04,#EA4335);color:#fff;font-weight:700;border-radius:12px;text-align:center;text-decoration:none;padding:14px 24px;font-size:1rem;"><i class="fab fa-google"></i> Ver Perfil de Google</a>` : ''}
+  1124→                        <button class="btn btn-primary btn-full btn-lg" id="openChatBtn" style="margin-top:8px;"><i class="fas fa-comment-dots"></i> Enviar Mensaje</button>
+  1125→                        <button class="btn btn-full btn-lg" id="shareWhatsAppBtn" style="display:none;margin-top:8px;background:#fff;color:#111;border:2px solid #111;font-weight:600;border-radius:12px;text-align:center;padding:14px 24px;font-size:1rem;cursor:pointer;"><i class="fab fa-whatsapp" style="color:#25d366;"></i> Compartir por WhatsApp</button>
+  1126→                    </div>
+  1127→                </div>
+  1128→
+  1129→                ${(() => { const instagram = normalizeSocialUrl(business.instagram, 'instagram'); const facebook = normalizeSocialUrl(business.facebook, 'facebook'); const twitter = normalizeSocialUrl(business.twitter, 'twitter'); const tiktok = normalizeSocialUrl(business.tiktok, 'tiktok'); const youtube = normalizeSocialUrl(business.youtube, 'youtube'); const hasSocial = instagram || facebook || twitter || tiktok || youtube; if (!hasSocial && !business.slug) return ''; return `
+  1130→                <div class="pd-social-section" style="padding:20px 24px;">
+  1131→                  <div style="font-size:1.1rem;font-weight:700;color:#0f172a;margin-bottom:16px;display:flex;align-items:center;gap:8px;">
+  1132→                    <i class="fas fa-share-nodes" style="color:#006EE3;"></i> Redes Sociales y Web
+  1133→                  </div>
+  1134→                  <div style="display:flex;gap:15px;flex-wrap:wrap;">
+  1135→                    ${business.slug ? `<a href="/web/${escapeHtml(business.slug)}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:10px;padding:16px 30px;border-radius:18px;background:linear-gradient(135deg,#006EE3,#0ea5e9);color:#fff;text-decoration:none;font-size:1.35rem;font-weight:700;"><i class="fas fa-globe" style="font-size:1.5rem;"></i> Sitio Web</a>` : ''}
+  1136→                    ${instagram ? `<a href="${escapeHtml(instagram)}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:10px;padding:16px 30px;border-radius:18px;background:linear-gradient(135deg,#833ab4,#fd1d1d,#fcb045);color:#fff;text-decoration:none;font-size:1.35rem;font-weight:700;"><i class="fab fa-instagram" style="font-size:1.5rem;"></i> Instagram</a>` : ''}
+  1137→                    ${facebook ? `<a href="${escapeHtml(facebook)}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:10px;padding:16px 30px;border-radius:18px;background:#1877f2;color:#fff;text-decoration:none;font-size:1.35rem;font-weight:700;"><i class="fab fa-facebook-f" style="font-size:1.5rem;"></i> Facebook</a>` : ''}
+  1138→                    ${twitter ? `<a href="${escapeHtml(twitter)}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:10px;padding:16px 30px;border-radius:18px;background:#000;color:#fff;text-decoration:none;font-size:1.35rem;font-weight:700;"><i class="fab fa-x-twitter" style="font-size:1.5rem;"></i> X (Twitter)</a>` : ''}
+  1139→                    ${tiktok ? `<a href="${escapeHtml(tiktok)}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:10px;padding:16px 30px;border-radius:18px;background:#010101;color:#fff;text-decoration:none;font-size:1.35rem;font-weight:700;"><i class="fab fa-tiktok" style="font-size:1.5rem;"></i> TikTok</a>` : ''}
+  1140→                    ${youtube ? `<a href="${escapeHtml(youtube)}" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:10px;padding:16px 30px;border-radius:18px;background:#ff0000;color:#fff;text-decoration:none;font-size:1.35rem;font-weight:700;"><i class="fab fa-youtube" style="font-size:1.5rem;"></i> YouTube</a>` : ''}
+  1141→                  </div>
+  1142→                </div>`; })()}
+  1143→
+  1144→                ${(() => {
+  1145→                    // FIX: La descripción del negocio va AQUÍ, justo DESPUÉS del botón
+  1146→                    // "Sitio Web" (sección Redes Sociales y Web). Antes estaba dentro del
+  1147→                    // .compact-info-card, arriba de la galería. Ahora queda abajo del
+  1148→                    // botón de página web, con texto JUSTIFICADO.
+  1149→                    const desc = business.description || '';
+  1150→                    if (!desc || !desc.trim()) return '';
+  1151→                    return `
+  1152→                <div class="business-section business-description-section" style="padding:20px 24px;">
+  1153→                  <div style="font-size:1.1rem;font-weight:700;color:#0f172a;margin-bottom:12px;display:flex;align-items:center;gap:8px;">
+  1154→                    <i class="fas fa-align-left" style="color:#006EE3;"></i> Sobre el Negocio
+  1155→                  </div>
+  1156→                  <div class="compact-description" id="propDescription" style="text-align:justify;">
+  1157→                    <p>${escapeHtml(desc)}</p>
+  1158→                  </div>
+  1159→                </div>`;
+  1160→                })()}
+  1161→
+  1162→                ${(() => {
+  1163→                    const raw = business.video_url;
+  1164→                    if (!raw) return '';
+  1165→                    let urls = [];
+  1166→                    if (raw.startsWith('[')) { try { urls = JSON.parse(raw); } catch(e) { urls = [raw]; } }
+  1167→                    else { urls = [raw]; }
+  1168→                    urls = urls.filter(u => u);
+  1169→                    if (!urls.length) return '';
+  1170→                    return `
+  1171→                <div style="padding:16px 20px;">
+  1172→                  <div style="font-size:0.85rem;font-weight:700;color:#0f172a;margin-bottom:12px;display:flex;align-items:center;gap:6px;">
+  1173→                    <i class="fas fa-play-circle" style="color:#006EE3;"></i> Video${urls.length > 1 ? 's' : ''} (${urls.length})
+  1174→                  </div>
+  1175→                  <div style="display:${urls.length > 1 ? 'grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;' : 'block;max-width:320px;margin:0 auto;'}border-radius:16px;overflow:hidden;">
+  1176→                    ${urls.map(u => '<div style="border-radius:16px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.1);">' + getVideoEmbed(u) + '</div>').join('')}
+  1177→                  </div>
+  1178→                </div>`;
+  1179→                })()}
+  1180→
+  1181→                <section class="business-section" id="productsSection" style="display:none;">
+  1182→                    <div class="section-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+  1183→                        <h2 class="business-section-title"><i class="fas fa-boxes-stacked" style="color:#006EE3;"></i> Productos</h2>
+  1184→                        <a href="/marketplace.html" class="section-link" id="viewAllProducts">Ver más <i class="fas fa-arrow-right"></i></a>
+  1185→                    </div>
+  1186→                    <div class="products-grid" id="businessProductsGrid"></div>
+  1187→                </section>
+  1188→
+  1189→                <section class="business-section" id="servicesSection" style="display:none;">
+  1190→                    <div class="section-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+  1191→                        <h2 class="business-section-title"><i class="fas fa-concierge-bell" style="color:#f59e0b;"></i> Servicios</h2>
+  1192→                    </div>
+  1193→                    <div class="services-list" id="businessServicesList"></div>
+  1194→                </section>
+  1195→
+  1196→                <section class="business-section" id="jobsSection" style="display:none;">
+  1197→                    <div class="section-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+  1198→                        <h2 class="business-section-title" style="font-size:1.1rem;margin:0;"><i class="fas fa-briefcase" style="color:#1a73e8;"></i> Empleo</h2>
+  1199→                        <a href="/empleo.html" class="section-link" id="viewAllJobs" style="display:none;">Ver más <i class="fas fa-arrow-right"></i></a>
+  1200→                    </div>
+  1201→                    <div class="jobs-list" id="businessJobsList"></div>
+  1202→                    <div id="businessJobsEmpty" style="display:none;text-align:center;padding:12px 16px;">
+  1203→                        <a href="/empleo.html" class="btn btn-secondary" style="display:inline-flex;align-items:center;gap:6px;padding:8px 16px;font-size:0.82rem;border-radius:8px;text-decoration:none;width:auto;max-width:240px;justify-content:center;margin:0 auto;"><i class="fas fa-briefcase"></i> Ir a ofertas de empleo</a>
+  1204→                    </div>
+  1205→                </section>
+  1206→            </div>
+  1207→
+  1208→            <section class="section hidden" id="similarSection" style="margin-top:28px;">
+  1209→                <div class="section-header">
+  1210→                    <h2 class="section-title" style="display:flex;align-items:center;gap:8px;"><i class="fas fa-store" style="color:#006EE3;font-size:0.9rem;"></i> Negocios Similares</h2>
+  1211→                    <a href="/search.html" class="section-link" style="font-size:0.8rem;">Ver más <i class="fas fa-arrow-right"></i></a>
+  1212→                </div>
+  1213→                <div class="business-grid" id="similarGrid"></div>
+  1214→            </section>
+  1215→        </div>
+  1216→    </main>
+  1217→
+  1218→    <div class="lightbox hidden" id="lightbox">
+  1219→        <button class="lightbox-close" id="lightboxClose">&times;</button>
+  1220→        <button class="lightbox-nav lightbox-prev" id="lightboxPrev"><i class="fas fa-chevron-left"></i></button>
+  1221→        <img id="lightboxImage" src="" alt="" class="lightbox-img">
+  1222→        <button class="lightbox-nav lightbox-next" id="lightboxNext"><i class="fas fa-chevron-right"></i></button>
+  1223→        <div class="lightbox-counter" id="lightboxCounter"></div>
+  1224→    </div>
+  1225→
+  1226→    <div class="map-modal" id="mapModal">
+  1227→        <div class="map-modal-header">
+  1228→            <h3><i class="fas fa-map-marker-alt"></i> Ubicación del Negocio</h3>
+  1229→            <button class="map-modal-close" id="mapModalClose" aria-label="Cerrar mapa"><i class="fas fa-times"></i></button>
+  1230→        </div>
+  1231→        <div class="map-modal-body"><div id="mapModalMap"></div></div>
+  1232→    </div>
+  1233→
+  1234→    <div class="toast-container" id="toastContainer"></div>
+  1235→    <footer class="footer">
+  1236→        <div class="container">
+  1237→            <div class="footer-bottom">
+  1238→                <p>&copy; ${new Date().getFullYear()} En Santiago. Todos los derechos reservados.</p>
+  1239→                <p><a href="https://maps.app.goo.gl/Jz2QTADrNNneQtGd9" target="_blank" rel="noopener noreferrer">Página web desarrollada por Grupo 360 Soluciones</a></p>
+  1240→                <p><a href="http://coporo.pages.dev/" target="_blank" rel="noopener noreferrer">Diseño de páginas webs - SEO Local -</a></p>
+  1241→            </div>
+  1242→        </div>
+  1243→    </footer>
+  1244→    <script src="/js/app.js?v=7"></script>
+  1245→    <script>window.__BUSINESS_ID = ${business.id}; window.__BUSINESS_SLUG = '${escapeJs(business.slug)}';</script>
+  1246→    <script src="/js/business-detail.js?v=9"></script>
+  1247→    <script src="/js/chat.js?v=3"></script>
+  1248→    <script src="/js/review-widget.js?v=3"></script>
+  1249→    <script src="/js/ai-chatbot.js?v=3"></script>
+  1250→    <script>setTimeout(function(){fetch('/api/business-stats/track',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({business_id:${business.id},event_type:'view',source:'ficha'})}).catch(function(){})},0);</script>
+  1251→</body>
+  1252→</html>`;
+  1253→
+  1254→  return new Response(html, {
+  1255→    status: 200,
+  1256→    headers: {
+  1257→      'Content-Type': 'text/html; charset=utf-8',
+  1258→      'Cache-Control': 'no-store',
+  1259→      'Link': `<${finalCanonical}>; rel="canonical"`,
+  1260→    },
+  1261→  });
+  1262→}

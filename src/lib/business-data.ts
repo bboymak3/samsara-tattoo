@@ -22,6 +22,9 @@ export const BUSINESS = {
   postalCode: "7500000",
   hours: "Abierto las 24 horas",
   mapsUrl: "https://maps.google.com/?q=Guardia+Vieja+181+Providencia+Santiago+Chile",
+  logoUrl: "/logo.svg",
+  bannerUrl: "/banner.svg",
+  faviconUrl: "/favicon.svg",
   geo: {
     region: "CL-RM",
     placeName: "Providencia, Santiago de Chile",

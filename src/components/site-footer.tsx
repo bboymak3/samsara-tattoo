@@ -110,10 +110,32 @@ export function SiteFooter() {
               <Link href="/galeria" className="text-muted-foreground transition-colors hover:text-primary">
                 Galería
               </Link>
-              <Link href="/comunas/providencia" className="text-muted-foreground transition-colors hover:text-primary">
+              <Link href="/comunas" className="text-muted-foreground transition-colors hover:text-primary">
                 Comunas
               </Link>
             </nav>
+          </div>
+
+          <div className="mt-4 border-t border-border/40 pt-4 text-center">
+            <p className="text-xs text-muted-foreground">
+              <a
+                href="https://en-santiago.pages.dev/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-medium text-muted-foreground transition-colors hover:text-primary"
+              >
+                Página web desarrollada por Grupo 360 Soluciones
+              </a>
+              {" "}-{" "}
+              <a
+                href="https://en-santiago.pages.dev/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-muted-foreground transition-colors hover:text-primary"
+              >
+                Diseño de páginas webs - SEO Local
+              </a>
+            </p>
           </div>
         </div>
       </div>

@@ -213,6 +213,14 @@ export default async function ComunaPage({
                 <Link href="/contacto">Formulario de contacto</Link>
               </Button>
             </div>
+            {/* Banner */}
+            <div className="mt-8 overflow-hidden rounded-2xl border border-border shadow-xl">
+              <img
+                src={BUSINESS.bannerUrl}
+                alt={`Samsara Tattoo Studio - Tatuajes en ${comuna.name}, Santiago`}
+                className="w-full"
+              />
+            </div>
           </div>
         </section>
 

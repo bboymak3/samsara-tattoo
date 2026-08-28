@@ -195,6 +195,14 @@ export default async function ServicioPage({
                 <Link href="/contacto">Formulario de contacto</Link>
               </Button>
             </div>
+            {/* Banner */}
+            <div className="mt-8 overflow-hidden rounded-2xl border border-border shadow-xl">
+              <img
+                src={BUSINESS.bannerUrl}
+                alt={`${service.title} en Santiago - Samsara Tattoo Studio`}
+                className="w-full"
+              />
+            </div>
           </div>
         </section>
 

@@ -127,6 +127,14 @@ export default function Home() {
                 </Button>
               </div>
             </div>
+            {/* Banner */}
+            <div className="mt-10 overflow-hidden rounded-2xl border border-border shadow-xl">
+              <img
+                src={BUSINESS.bannerUrl}
+                alt="Samsara Tattoo Studio - Wilfren Jiménez - Tatuajes en Santiago de Chile"
+                className="w-full"
+              />
+            </div>
           </div>
         </section>
 

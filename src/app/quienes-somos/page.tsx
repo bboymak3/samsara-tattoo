@@ -147,6 +147,15 @@ export default function QuienesSomosPage() {
               </Button>
             </div>
 
+            {/* Banner */}
+            <div className="mt-8 overflow-hidden rounded-2xl border border-border shadow-xl">
+              <img
+                src={BUSINESS.bannerUrl}
+                alt="Samsara Tattoo Studio - Wilfren Jiménez - Artista Corporal y Visual"
+                className="w-full"
+              />
+            </div>
+
             <div className="mt-8 flex flex-wrap gap-3">
               {BUSINESS.instagrams.map((ig) => (
                 <a

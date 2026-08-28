@@ -24,6 +24,8 @@ import {
   ArrowRight,
   MessageCircle,
   ExternalLink,
+  ChevronDown,
+  HelpCircle,
   ChevronRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -451,6 +453,85 @@ export default function Home() {
                   </li>
                 </ul>
               </div>
+            </div>
+          </div>
+        </section>
+
+        {/* ─── FAQ / PREGUNTAS FRECUENTES ─── */}
+        <section id="faq" className="border-b border-border bg-muted/30 py-20">
+          <div className="container mx-auto max-w-3xl px-4 sm:px-6 lg:px-8">
+            <div className="mb-12 text-center">
+              <Badge
+                variant="outline"
+                className="mb-4 border-primary/30 text-primary"
+              >
+                <HelpCircle className="size-3.5 mr-1.5" />
+                FAQ
+              </Badge>
+              <h2 className="text-3xl font-bold text-foreground md:text-4xl">
+                Preguntas Frecuentes
+              </h2>
+              <p className="mt-3 text-muted-foreground">
+                Resolvemos tus dudas sobre tatuajes, aerografía, precios y
+                atención en Santiago.
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              {[
+                {
+                  q: "¿Dónde está ubicado Samsara Tattoo Studio?",
+                  a: `Estamos en ${BUSINESS.addressStreet}, ${BUSINESS.addressComuna}, Santiago de Chile. Atendemos con cita previa en un espacio privado.`,
+                },
+                {
+                  q: "¿Qué estilos de tatuaje realiza Wilfren Jiménez?",
+                  a: "Domina realismo, línea fina, lettering, blackwork, microrealismo, geometría sagrada y proyectos personalizados.",
+                },
+                {
+                  q: "¿Cuánto cuesta un tatuaje en Santiago?",
+                  a: `El precio varía según tamaño, zona y complejidad. Cotiza gratis por WhatsApp al ${BUSINESS.phoneDisplay}.`,
+                },
+                {
+                  q: "¿En qué comunas atienden?",
+                  a: "Atendemos en toda la Región Metropolitana: Providencia, Las Condes, Ñuñoa, Vitacura, La Reina, Lo Barnechea, Maipú, Puente Alto y más de 50 comunas.",
+                },
+                {
+                  q: "¿Hacen aerografía a domicilio?",
+                  a: "Sí. Para piezas de gran formato como murales o personalización de cascos/motos, Wilfren se desplaza a tu ubicación.",
+                },
+                {
+                  q: "¿El servicio tiene garantía?",
+                  a: "Sí, todos nuestros servicios cuentan con garantía de satisfacción. Si no quedas conforme, volvemos a realizar el retoque sin costo.",
+                },
+                {
+                  q: "¿Tienen protocolos de bioseguridad?",
+                  a: "Sí: material 100% desechable, esterilización certificada, estudio privado con cita previa y tintas de primera calidad.",
+                },
+                {
+                  q: "¿Cómo agendo mi sesión?",
+                  a: `Por WhatsApp al ${BUSINESS.phoneDisplay} o mediante el formulario de contacto. Coordinamos fecha y horario según tu preferencia.`,
+                },
+              ].map((faq, i) => (
+                <details
+                  key={i}
+                  className="group rounded-xl border border-border bg-background p-5"
+                >
+                  <summary className="flex cursor-pointer items-center justify-between font-semibold text-foreground">
+                    {faq.q}
+                    <ChevronDown className="size-5 transition-transform group-open:rotate-180" />
+                  </summary>
+                  <p className="mt-3 text-sm text-muted-foreground">{faq.a}</p>
+                </details>
+              ))}
+            </div>
+
+            <div className="mt-8 text-center">
+              <Button asChild variant="outline">
+                <Link href="/preguntas-frecuentes">
+                  Ver todas las preguntas
+                  <ArrowRight className="ml-2 size-4" />
+                </Link>
+              </Button>
             </div>
           </div>
         </section>

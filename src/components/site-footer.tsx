@@ -110,8 +110,20 @@ export function SiteFooter() {
               <Link href="/galeria" className="text-muted-foreground transition-colors hover:text-primary">
                 Galería
               </Link>
+              <Link href="/servicios" className="text-muted-foreground transition-colors hover:text-primary">
+                Servicios
+              </Link>
               <Link href="/comunas" className="text-muted-foreground transition-colors hover:text-primary">
                 Comunas
+              </Link>
+              <Link href="/preguntas-frecuentes" className="text-muted-foreground transition-colors hover:text-primary">
+                Preguntas
+              </Link>
+              <Link href="/politica-de-higiene" className="text-muted-foreground transition-colors hover:text-primary">
+                Higiene
+              </Link>
+              <Link href="/politicas-de-privacidad" className="text-muted-foreground transition-colors hover:text-primary">
+                Privacidad
               </Link>
             </nav>
           </div>

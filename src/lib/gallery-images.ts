@@ -1,6 +1,6 @@
 // src/lib/gallery-images.ts
-// Lista centralizada de 25 imágenes SEO local para galería.
-// Cada imagen tiene: src, alt (con keyword + comuna), category, comuna.
+// 25 imágenes reales de tatuajes realizados en distintas comunas de Santiago.
+// Cada foto tiene el nombre base SEO + "-comuna" al final.
 
 export interface GalleryImage {
   src: string;
@@ -9,157 +9,34 @@ export interface GalleryImage {
   comuna?: string;
 }
 
+const BASE = "/images/tatuajes-doseño-tatuador-tauar-tatuajes-a-domicilio-estudio-de-tatuajes-estudio-de-tatoos-en-santiago";
+
 export const GALLERY_IMAGES: GalleryImage[] = [
-  {
-    src: "/images/estudio-de-tatuajes-providencia.jpg",
-    alt: "Estudio de tatuajes Samsara Tattoo Studio en Providencia, Santiago",
-    category: "tatuaje",
-    comuna: "providencia",
-  },
-  {
-    src: "/images/tatuajes-realismo-las-condes.jpg",
-    alt: "Tatuaje de realismo realizado por Wilfren Jiménez en Las Condes, Santiago",
-    category: "tatuaje",
-    comuna: "las-condes",
-  },
-  {
-    src: "/images/tatuador-realista-santiago-centro.jpg",
-    alt: "Tatuador realista en Santiago Centro - Samsara Tattoo Studio",
-    category: "tatuaje",
-    comuna: "santiago",
-  },
-  {
-    src: "/images/tatuajes-personalizados-vitacura.jpg",
-    alt: "Tatuaje personalizado en Vitacura - Wilfren Jiménez Samsara",
-    category: "tatuaje",
-    comuna: "vitacura",
-  },
-  {
-    src: "/images/tatuajes-minimalistas-la-reina.jpg",
-    alt: "Tatuaje minimalista en La Reina, Santiago de Chile",
-    category: "tatuaje",
-    comuna: "la-reina",
-  },
-  {
-    src: "/images/tatuajes-linea-fina-nunoa.jpg",
-    alt: "Tatuaje línea fina (Fine Line) en Ñuñoa, Santiago",
-    category: "tatuaje",
-    comuna: "nunoa",
-  },
-  {
-    src: "/images/tatuajes-lettering-lo-barnechea.jpg",
-    alt: "Tatuaje lettering y caligrafía en Lo Barnechea, Santiago",
-    category: "tatuaje",
-    comuna: "lo-barnechea",
-  },
-  {
-    src: "/images/tatuajes-en-el-brazo-macul.jpg",
-    alt: "Tatuaje en el brazo realizado en Macul, Santiago de Chile",
-    category: "tatuaje",
-    comuna: "macul",
-  },
-  {
-    src: "/images/manga-tatuaje-realismo-penalolen.jpg",
-    alt: "Manga tatuaje realismo en Peñalolén, Santiago - Samsara",
-    category: "tatuaje",
-    comuna: "penalolen",
-  },
-  {
-    src: "/images/tatuajes-antebrazo-hombre-la-florida.jpg",
-    alt: "Tatuaje en antebrazo hombre en La Florida, Santiago",
-    category: "tatuaje",
-    comuna: "la-florida",
-  },
-  {
-    src: "/images/tatuajes-brazo-mujer-san-miguel.jpg",
-    alt: "Tatuaje en brazo de mujer en San Miguel, Santiago",
-    category: "tatuaje",
-    comuna: "san-miguel",
-  },
-  {
-    src: "/images/tatuajes-para-hombres-recoleta.jpg",
-    alt: "Tatuajes para hombres en Recoleta, Santiago de Chile",
-    category: "tatuaje",
-    comuna: "recoleta",
-  },
-  {
-    src: "/images/tatuajes-para-mujeres-independencia.jpg",
-    alt: "Tatuajes para mujeres en Independencia, Santiago",
-    category: "tatuaje",
-    comuna: "independencia",
-  },
-  {
-    src: "/images/tatuajes-pequenos-quinta-normal.jpg",
-    alt: "Tatuaje pequeño minimalista en Quinta Normal, Santiago",
-    category: "tatuaje",
-    comuna: "quinta-normal",
-  },
-  {
-    src: "/images/tatuajes-de-flores-estacion-central.jpg",
-    alt: "Tatuaje de flores realista en Estación Central, Santiago",
-    category: "tatuaje",
-    comuna: "estacion-central",
-  },
-  {
-    src: "/images/tatuajes-de-nombres-maipu.jpg",
-    alt: "Tatuaje de nombres lettering en Maipú, Santiago",
-    category: "tatuaje",
-    comuna: "maipu",
-  },
-  {
-    src: "/images/tatuajes-en-la-mano-pudahuel.jpg",
-    alt: "Tatuaje en la mano en Pudahuel, Santiago de Chile",
-    category: "tatuaje",
-    comuna: "pudahuel",
-  },
-  {
-    src: "/images/tatuajes-en-el-cuello-quilicura.jpg",
-    alt: "Tatuaje en el cuello en Quilicura, Santiago",
-    category: "tatuaje",
-    comuna: "quilicura",
-  },
-  {
-    src: "/images/tatuajes-en-pareja-huechuraba.jpg",
-    alt: "Tatuajes en pareja en Huechuraba, Santiago de Chile",
-    category: "tatuaje",
-    comuna: "huechuraba",
-  },
-  {
-    src: "/images/tatuaje-retrato-realista-conchali.jpg",
-    alt: "Tatuaje retrato realista en Conchalí, Santiago",
-    category: "tatuaje",
-    comuna: "conchali",
-  },
-  {
-    src: "/images/tatuaje-flor-de-loto-san-joaquin.jpg",
-    alt: "Tatuaje flor de loto geometría en San Joaquín, Santiago",
-    category: "tatuaje",
-    comuna: "san-joaquin",
-  },
-  {
-    src: "/images/tatuajes-artisticos-la-cisterna.jpg",
-    alt: "Tatuaje artístico blackwork en La Cisterna, Santiago",
-    category: "tatuaje",
-    comuna: "la-cisterna",
-  },
-  {
-    src: "/images/tatuadores-profesionales-cerrillos.jpg",
-    alt: "Tatuadores profesionales en Cerrillos, Santiago de Chile",
-    category: "tatuaje",
-    comuna: "cerrillos",
-  },
-  {
-    src: "/images/mejor-estudio-de-tatuajes-puente-alto.jpg",
-    alt: "Mejor estudio de tatuajes en Puente Alto, Santiago",
-    category: "tatuaje",
-    comuna: "puente-alto",
-  },
-  {
-    src: "/images/samsara-tattoo-studio-san-bernardo.jpg",
-    alt: "Samsara Tattoo Studio - tatuajes en San Bernardo, Santiago",
-    category: "tatuaje",
-    comuna: "san-bernardo",
-  },
+  { src: `${BASE}-providencia.jpeg`, alt: "Tatuajes en Providencia, Santiago de Chile - Samsara Tattoo Studio", category: "tatuaje", comuna: "providencia" },
+  { src: `${BASE}-las-condes.jpeg`, alt: "Tatuajes en Las Condes, Santiago - Wilfren Jiménez", category: "tatuaje", comuna: "las-condes" },
+  { src: `${BASE}-nunoa.jpeg`, alt: "Tatuajes en Ñuñoa, Santiago de Chile - Samsara", category: "tatuaje", comuna: "nunoa" },
+  { src: `${BASE}-vitacura.jpeg`, alt: "Tatuajes en Vitacura, Santiago - estudio de tatuajes", category: "tatuaje", comuna: "vitacura" },
+  { src: `${BASE}-la-reina.jpeg`, alt: "Tatuajes en La Reina, Santiago de Chile - Samsara Tattoo", category: "tatuaje", comuna: "la-reina" },
+  { src: `${BASE}-lo-barnechea.jpeg`, alt: "Tatuajes en Lo Barnechea, Santiago - Wilfren Jiménez", category: "tatuaje", comuna: "lo-barnechea" },
+  { src: `${BASE}-santiago.jpeg`, alt: "Tatuajes en Santiago Centro - Samsara Tattoo Studio", category: "tatuaje", comuna: "santiago" },
+  { src: `${BASE}-recoleta.jpeg`, alt: "Tatuajes en Recoleta, Santiago de Chile - Samsara", category: "tatuaje", comuna: "recoleta" },
+  { src: `${BASE}-independencia.jpeg`, alt: "Tatuajes en Independencia, Santiago - estudio de tatuajes", category: "tatuaje", comuna: "independencia" },
+  { src: `${BASE}-estacion-central.jpeg`, alt: "Tatuajes en Estación Central, Santiago - Samsara Tattoo", category: "tatuaje", comuna: "estacion-central" },
+  { src: `${BASE}-macul.jpeg`, alt: "Tatuajes en Macul, Santiago de Chile - Wilfren Jiménez", category: "tatuaje", comuna: "macul" },
+  { src: `${BASE}-penalolen.jpeg`, alt: "Tatuajes en Peñalolén, Santiago - Samsara Tattoo Studio", category: "tatuaje", comuna: "penalolen" },
+  { src: `${BASE}-la-florida.jpeg`, alt: "Tatuajes en La Florida, Santiago de Chile - Samsara", category: "tatuaje", comuna: "la-florida" },
+  { src: `${BASE}-puente-alto.jpeg`, alt: "Tatuajes en Puente Alto, Santiago - Wilfren Jiménez", category: "tatuaje", comuna: "puente-alto" },
+  { src: `${BASE}-maipu.jpeg`, alt: "Tatuajes en Maipú, Santiago de Chile - Samsara Tattoo", category: "tatuaje", comuna: "maipu" },
+  { src: `${BASE}-pudahuel.jpeg`, alt: "Tatuajes en Pudahuel, Santiago - estudio de tatuajes", category: "tatuaje", comuna: "pudahuel" },
+  { src: `${BASE}-quilicura.jpeg`, alt: "Tatuajes en Quilicura, Santiago de Chile - Samsara", category: "tatuaje", comuna: "quilicura" },
+  { src: `${BASE}-huechuraba.jpeg`, alt: "Tatuajes en Huechuraba, Santiago - Wilfren Jiménez", category: "tatuaje", comuna: "huechuraba" },
+  { src: `${BASE}-conchali.jpeg`, alt: "Tatuajes en Conchalí, Santiago de Chile - Samsara Tattoo", category: "tatuaje", comuna: "conchali" },
+  { src: `${BASE}-renca.jpeg`, alt: "Tatuajes en Renca, Santiago - estudio de tatuajes", category: "tatuaje", comuna: "renca" },
+  { src: `${BASE}-san-miguel.jpeg`, alt: "Tatuajes en San Miguel, Santiago de Chile - Samsara", category: "tatuaje", comuna: "san-miguel" },
+  { src: `${BASE}-san-joaquin.jpeg`, alt: "Tatuajes en San Joaquín, Santiago - Wilfren Jiménez", category: "tatuaje", comuna: "san-joaquin" },
+  { src: `${BASE}-la-cisterna.jpeg`, alt: "Tatuajes en La Cisterna, Santiago de Chile - Samsara Tattoo", category: "tatuaje", comuna: "la-cisterna" },
+  { src: `${BASE}-san-bernardo.jpeg`, alt: "Tatuajes en San Bernardo, Santiago - Samsara Tattoo Studio", category: "tatuaje", comuna: "san-bernardo" },
+  { src: `${BASE}-cerrillos.jpeg`, alt: "Tatuajes en Cerrillos, Santiago de Chile - Samsara", category: "tatuaje", comuna: "cerrillos" },
 ];
 
 export const GALLERY_CATEGORIES = [

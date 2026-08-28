@@ -41,9 +41,9 @@ export const metadata: Metadata = {
     canonical: "/",
   },
   icons: {
-    icon: "/favicon.svg",
-    shortcut: "/favicon.svg",
-    apple: "/logo.svg",
+    icon: "/favicon.jpg",
+    shortcut: "/favicon.jpg",
+    apple: "/logo.jpg",
   },
   openGraph: {
     type: "website",
@@ -55,10 +55,10 @@ export const metadata: Metadata = {
       "Estudio de tatuajes y galería de arte en Providencia, Santiago. Realismo, línea fina, lettering, blackwork y aerografía. 11 años de experiencia con Wilfren Jiménez.",
     images: [
       {
-        url: "/images/estudio-de-tatuajes-providencia.jpg",
+        url: "/banner.jpg",
         width: 1200,
         height: 630,
-        alt: "Samsara Tattoo Studio - Estudio de tatuajes en Providencia, Santiago",
+        alt: "Samsara Tattoo Studio - Tatuajes en Santiago de Chile",
       },
     ],
   },
@@ -67,7 +67,7 @@ export const metadata: Metadata = {
     title: "Samsara Tattoo Studio | Tatuajes en Santiago y Providencia",
     description:
       "Estudio de tatuajes y galería de arte en Providencia, Santiago. Wilfren Jiménez, 11 años de experiencia.",
-    images: ["/images/estudio-de-tatuajes-providencia.jpg"],
+    images: ["/banner.jpg"],
   },
   other: {
     "geo.region": BUSINESS.geo.region,

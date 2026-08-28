@@ -17,7 +17,7 @@ export const metadata: Metadata = {
     template: "%s | Samsara Tattoo Studio",
   },
   description:
-    "Samsara Tattoo Studio en Providencia, Santiago de Chile. Tatuajes realismo, línea fina, lettering, blackwork, microrealismo, geometría y aerografía a domicilio. 11 años de experiencia con Wilfren Jiménez, artista corporal y visual. Cotiza gratis por WhatsApp al +56 9 4507 0308.",
+    "Samsara Tattoo Studio en Providencia, Santiago de Chile. Tatuajes realismo, línea fina, lettering, blackwork, microrealismo, geometría y aerografía a domicilio. 11 años de experiencia con Wilfren Jiménez, artista corporal y visual. Cotiza gratis por WhatsApp al +56945070308.",
   keywords: [
     "tatuajes en Santiago",
     "tatuajes Providencia",

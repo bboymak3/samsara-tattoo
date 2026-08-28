@@ -11,10 +11,10 @@ export const BUSINESS = {
     "Si tienes planes de realizar un nuevo proyecto, te puedo acompañar en el proceso de creación para que tu idea junto a mi experiencia creemos algo único y personalizado.",
   experienceYears: 11,
   phoneDisplay: "+56945070308",
-  phoneRaw: "5694507308",
+  phoneRaw: "56945070308",
   whatsappUrl:
-    "https://wa.me/5694507308?text=Hola%20Samsara%2C%20quiero%20cotizar%20un%20tatuaje",
-  whatsappBaseUrl: "https://wa.me/5694507308",
+    "https://wa.me/56945070308?text=Hola%20Samsara%2C%20quiero%20cotizar%20un%20tatuaje",
+  whatsappBaseUrl: "https://wa.me/56945070308",
   addressStreet: "Guardia Vieja 181, Oficina 706",
   addressComuna: "Providencia",
   addressRegion: "Región Metropolitana",

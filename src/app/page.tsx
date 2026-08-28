@@ -38,6 +38,7 @@ import {
   TatuadorModal,
   AerografoModal,
 } from "@/components/site-modals";
+import { OwlEyes } from "@/components/owl-eyes";
 
 const ComunasMap = dynamic(
   () => import("@/components/comunas-map").then((m) => m.ComunasMap),
@@ -85,6 +86,10 @@ export default function Home() {
           <div className="absolute inset-0 opacity-20 [background-image:radial-gradient(circle_at_20%_20%,#22c55e_0,transparent_40%),radial-gradient(circle_at_80%_60%,#22c55e_0,transparent_35%)]" />
           <div className="container relative mx-auto max-w-7xl px-4 py-20 sm:px-6 lg:px-8 lg:py-28">
             <div className="mx-auto max-w-3xl text-center">
+              {/* Búho con ojos animados efecto fuego */}
+              <div className="mb-6 flex justify-center">
+                <OwlEyes size={100} />
+              </div>
               <Badge className="mb-4 bg-primary/15 text-primary border-primary/30">
                 <Award className="size-3.5 mr-1.5" />
                 {BUSINESS.experienceYears} años de experiencia

@@ -101,6 +101,9 @@ export function SiteFooter() {
               &copy; {new Date().getFullYear()} {BUSINESS.name}. Todos los derechos reservados.
             </p>
             <nav className="flex flex-wrap gap-4 text-xs">
+              <Link href="/sobre-mi" className="text-muted-foreground transition-colors hover:text-primary">
+                Sobre Mí
+              </Link>
               <Link href="/quienes-somos" className="text-muted-foreground transition-colors hover:text-primary">
                 Quiénes Somos
               </Link>
@@ -140,7 +143,7 @@ export function SiteFooter() {
               </a>
               {" "}-{" "}
               <a
-                href="https://en-santiago.pages.dev/"
+                href="https://coporo.pages.dev/"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-muted-foreground transition-colors hover:text-primary"

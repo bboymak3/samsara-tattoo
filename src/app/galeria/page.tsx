@@ -19,14 +19,25 @@ export const metadata: Metadata = {
     title: "Galería de Tatuajes y Aerografía en Santiago | Samsara",
     description:
       "Fotos reales de trabajos de tatuaje y aerografía profesional en Santiago de Chile.",
+    type: "website",
+    locale: "es_CL",
     images: [
       {
-        url: GALLERY_IMAGES[0].src,
+        url: `${BUSINESS.url}/banner.jpg`,
+        secureUrl: `${BUSINESS.url}/banner.jpg`,
         width: 1200,
         height: 630,
-        alt: GALLERY_IMAGES[0].alt,
+        alt: "Galería de Tatuajes en Santiago - Samsara Tattoo Studio",
+        type: "image/jpeg",
       },
     ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Galería de Tatuajes y Aerografía en Santiago | Samsara",
+    description:
+      "Fotos reales de trabajos de tatuaje y aerografía profesional en Santiago de Chile.",
+    images: [`${BUSINESS.url}/banner.jpg`],
   },
 };
 

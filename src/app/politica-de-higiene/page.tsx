@@ -26,7 +26,20 @@ export const metadata: Metadata = {
     title: "Política de Higiene y Bioseguridad | Samsara Tattoo Studio",
     description:
       "Protocolos estrictos de bioseguridad: material desechable, esterilización, estudio privado con cita previa.",
-    images: [{ url: "/banner.jpg" }],
+        images: [
+      {
+        url: `${BUSINESS.url}/banner.jpg`,
+        secureUrl: `${BUSINESS.url}/banner.jpg`,
+        width: 1200,
+        height: 630,
+        alt: "Samsara Tattoo Studio - Tatuajes en Santiago de Chile",
+        type: "image/jpeg",
+      },
+    ],
+    twitter: {
+      card: "summary_large_image",
+      images: [`${BUSINESS.url}/banner.jpg`],
+    },
   },
 };
 

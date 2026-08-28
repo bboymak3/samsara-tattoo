@@ -44,7 +44,20 @@ export const metadata: Metadata = {
       "Artista corporal y visual con 11 años de trayectoria. Tatuajes realismo, microrealismo, línea fina, blackwork y aerografía en Providencia, Santiago.",
     type: "profile",
     locale: "es_CL",
-    images: [{ url: "/banner.jpg", width: 1200, height: 630 }],
+        images: [
+      {
+        url: `${BUSINESS.url}/banner.jpg`,
+        secureUrl: `${BUSINESS.url}/banner.jpg`,
+        width: 1200,
+        height: 630,
+        alt: "Samsara Tattoo Studio - Tatuajes en Santiago de Chile",
+        type: "image/jpeg",
+      },
+    ],
+    twitter: {
+      card: "summary_large_image",
+      images: [`${BUSINESS.url}/banner.jpg`],
+    },
   },
   twitter: {
     card: "summary_large_image",

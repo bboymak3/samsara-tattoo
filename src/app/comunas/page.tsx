@@ -20,6 +20,23 @@ export const metadata: Metadata = {
       "54 comunas de la Región Metropolitana atendidas por Samsara Tattoo Studio. Tatuajes y aerografía a domicilio.",
     type: "website",
     locale: "es_CL",
+    images: [
+      {
+        url: `${BUSINESS.url}/banner.jpg`,
+        secureUrl: `${BUSINESS.url}/banner.jpg`,
+        width: 1200,
+        height: 630,
+        alt: "Comunas que atendemos en Santiago - Samsara Tattoo Studio",
+        type: "image/jpeg",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Comunas que Atendemos en Santiago | Samsara Tattoo Studio",
+    description:
+      "54 comunas de la Región Metropolitana atendidas por Samsara Tattoo Studio.",
+    images: [`${BUSINESS.url}/banner.jpg`],
   },
 };
 

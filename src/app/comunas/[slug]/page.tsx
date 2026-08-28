@@ -60,6 +60,24 @@ export async function generateMetadata({
       description,
       type: "website",
       locale: "es_CL",
+      url: `${BUSINESS.url}/comunas/${comuna.slug}`,
+      siteName: BUSINESS.name,
+      images: [
+        {
+          url: `${BUSINESS.url}/banner.jpg`,
+          secureUrl: `${BUSINESS.url}/banner.jpg`,
+          width: 1200,
+          height: 630,
+          alt: `Tatuajes en ${comuna.name}, Santiago de Chile - Samsara Tattoo Studio`,
+          type: "image/jpeg",
+        },
+      ],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title,
+      description,
+      images: [`${BUSINESS.url}/banner.jpg`],
     },
     robots: {
       index: true,

@@ -31,7 +31,20 @@ export const metadata: Metadata = {
     title: "Servicios de Tatuajes y Aerografía en Santiago | Samsara",
     description:
       "12 servicios profesionales de tatuaje y artes visuales en Santiago de Chile. Wilfren Jiménez, 11 años de experiencia.",
-    images: [{ url: "/banner.jpg", width: 1200, height: 630 }],
+        images: [
+      {
+        url: `${BUSINESS.url}/banner.jpg`,
+        secureUrl: `${BUSINESS.url}/banner.jpg`,
+        width: 1200,
+        height: 630,
+        alt: "Samsara Tattoo Studio - Tatuajes en Santiago de Chile",
+        type: "image/jpeg",
+      },
+    ],
+    twitter: {
+      card: "summary_large_image",
+      images: [`${BUSINESS.url}/banner.jpg`],
+    },
   },
 };
 

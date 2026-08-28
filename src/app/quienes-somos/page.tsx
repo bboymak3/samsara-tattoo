@@ -22,6 +22,30 @@ export const metadata: Metadata = {
   description:
     "Conoce a Wilfren Jiménez, artista corporal y visual con 11 años de experiencia. Tatuajes realismo, línea fina, blackwork, lettering y aerografía profesional en Providencia, Santiago de Chile.",
   alternates: { canonical: "/quienes-somos" },
+  openGraph: {
+    title: "Quiénes Somos | Wilfren Jiménez - Samsara Tattoo Studio",
+    description:
+      "Conoce a Wilfren Jiménez, artista corporal y visual con 11 años de experiencia en Providencia, Santiago de Chile.",
+    type: "website",
+    locale: "es_CL",
+    images: [
+      {
+        url: `${BUSINESS.url}/banner.jpg`,
+        secureUrl: `${BUSINESS.url}/banner.jpg`,
+        width: 1200,
+        height: 630,
+        alt: "Wilfren Jiménez - Samsara Tattoo Studio - Tatuajes en Santiago",
+        type: "image/jpeg",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Quiénes Somos | Wilfren Jiménez - Samsara Tattoo Studio",
+    description:
+      "Conoce a Wilfren Jiménez, artista corporal y visual con 11 años de experiencia.",
+    images: [`${BUSINESS.url}/banner.jpg`],
+  },
 };
 
 export default function QuienesSomosPage() {

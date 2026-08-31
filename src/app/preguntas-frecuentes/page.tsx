@@ -60,11 +60,11 @@ const FAQS = [
   },
   {
     q: "¿El estudio tiene protocolos de bioseguridad?",
-    a: "Sí. Trabajamos con material 100% desechable, esterilización certificada, tintas de primera calidad y estudio privado con cita previa.",
+    a: "Sí. Trabajamos con material estéril y desechable de uso individual para cada cliente, esterilización certificada, tintas de primera calidad y estudio privado con cita previa.",
   },
   {
     q: "¿Ofrecen boleta o factura?",
-    a: "Sí, emitimos boleta o factura según tu requerimiento. Solo indícalo al momento de solicitar tu cotización.",
+    a: "Sí, emitimos solo boletas. Solo indícalo al momento de solicitar tu cotización.",
   },
   {
     q: "¿Puedo agendar para fin de semana?",
@@ -96,7 +96,7 @@ const FAQS = [
   },
   {
     q: "¿Atienden emergencias de tatuaje?",
-    a: `Sí, atendemos emergencias las 24 horas. Llámanos al ${BUSINESS.phoneDisplay} y responderemos lo antes posible.`,
+    a: `Sí, atendemos con cita previa de lunes a sábado de 10:00 AM a 9:00 PM. Llámanos al ${BUSINESS.phoneDisplay} y responderemos lo antes posible.`,
   },
 ];
 

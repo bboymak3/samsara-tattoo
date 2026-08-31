@@ -502,7 +502,7 @@ export default async function ServicioPage({
             </h2>
             <p className="mx-auto mb-10 max-w-2xl text-center text-muted-foreground">
               Manejamos precios transparentes y sin sorpresas. Todos nuestros
-              servicios incluyen boleta o factura electrónica.
+              servicios incluyen solo boletas.
             </p>
 
             <div className="grid gap-4 sm:grid-cols-3">
@@ -523,10 +523,10 @@ export default async function ServicioPage({
                 </p>
               </div>
               <div className="rounded-xl border border-border bg-background p-6 text-center">
-                <h3 className="font-semibold text-foreground">Boleta/Factura</h3>
+                <h3 className="font-semibold text-foreground">Solo Boletas</h3>
                 <p className="mt-2 text-3xl font-bold text-primary">Incluida</p>
                 <p className="mt-2 text-xs text-muted-foreground">
-                  Emitimos documento tributario según tu requerimiento
+                  Solo boletas
                 </p>
               </div>
             </div>

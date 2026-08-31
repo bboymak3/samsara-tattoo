@@ -95,7 +95,7 @@ export default function SobreMiPage() {
         telephone: `+${BUSINESS.phoneRaw}`,
         knowsAbout: [
           "Tatuaje realismo",
-          "Microrealismo",
+          "Micro Realismo",
           "Línea fina (fine line)",
           "Minimalismo botánico",
           "Lettering caligráfico",
@@ -251,7 +251,7 @@ export default function SobreMiPage() {
                   <Microscope className="size-6" />
                 </div>
                 <h3 className="mt-4 text-lg font-semibold text-foreground">
-                  Tatuaje Realismo & Microrealismo
+                  Tatuaje Realismo & Micro Realismo
                 </h3>
                 <p className="mt-2 text-sm text-muted-foreground">
                   Retratos fotorrealistas de personas, animales, esculturas y

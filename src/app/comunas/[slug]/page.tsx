@@ -120,7 +120,7 @@ export default async function ComunaPage({
           name: comuna.name,
         },
         priceRange: "$$",
-        openingHours: "Mo-Su 00:00-24:00",
+        openingHours: "Mo-Sa 10:00-21:00",
       },
       {
         "@type": "FAQPage",

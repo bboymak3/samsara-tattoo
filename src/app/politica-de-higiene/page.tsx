@@ -46,7 +46,7 @@ export const metadata: Metadata = {
 const PROTOCOLOS = [
   {
     icon: Hand,
-    title: "Material 100% Desechable",
+    title: "Material Estéril y Desechable",
     description:
       "Todos los materiales que entran en contacto con la piel son desechables: agujas, guantes, cartuchos, tintas individuales y papel de la camilla. Nunca reutilizamos material.",
   },
@@ -76,9 +76,9 @@ const PROTOCOLOS = [
   },
   {
     icon: Clock,
-    title: "Atención 24/7 para Emergencias",
+    title: "Horario Flexible con Cita Previa",
     description:
-      "Disponibilidad las 24 horas para consultas post-tatuaje. Si tienes cualquier duda o reacción inesperada, contáctanos inmediatamente.",
+      "Atención de lunes a sábado de 10:00 AM a 9:00 PM con cita previa. Horarios flexibles según tu necesidad. Para consultas post-tatuaje, contáctanos por WhatsApp.",
   },
 ];
 
@@ -92,7 +92,7 @@ export default function PoliticaHigienePage() {
         name: "¿Qué protocolos de bioseguridad tiene Samsara Tattoo Studio?",
         acceptedAnswer: {
           "@type": "Answer",
-          text: "Usamos material 100% desechable, esterilización con autoclave, estudio privado con cita previa, tintas certificadas y protocolo de barrera en cada sesión.",
+          text: "Usamos material estéril y desechable de uso individual para cada cliente, esterilización con autoclave, estudio privado con cita previa, tintas certificadas y protocolo de barrera en cada sesión.",
         },
       },
       {
@@ -140,7 +140,7 @@ export default function PoliticaHigienePage() {
               className="mb-4 border-primary/30 text-primary"
             >
               <Shield className="size-3.5 mr-1.5" />
-              Bioseguridad Certificada
+              Bioseguridad y Material Estéril
             </Badge>
             <h1 className="text-3xl font-bold text-foreground md:text-4xl lg:text-5xl">
               Política de Higiene y Bioseguridad

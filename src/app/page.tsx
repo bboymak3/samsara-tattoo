@@ -199,28 +199,28 @@ export default function Home() {
                     <p className="mt-2 text-2xl font-bold text-foreground">
                       {BUSINESS.experienceYears}+
                     </p>
-                    <p className="text-xs text-muted-foreground">
+                    <p className="text-xs text-muted-foreground">Lun-Sáb 10AM-9PM
                       Años de experiencia
                     </p>
                   </div>
                   <div className="rounded-xl bg-muted/30 p-5">
                     <Brush className="mx-auto size-8 text-primary" />
                     <p className="mt-2 text-2xl font-bold text-foreground">7+</p>
-                    <p className="text-xs text-muted-foreground">
+                    <p className="text-xs text-muted-foreground">Lun-Sáb 10AM-9PM
                       Estilos de tatuaje
                     </p>
                   </div>
                   <div className="rounded-xl bg-muted/30 p-5">
                     <Wind className="mx-auto size-8 text-primary" />
                     <p className="mt-2 text-2xl font-bold text-foreground">100%</p>
-                    <p className="text-xs text-muted-foreground">
+                    <p className="text-xs text-muted-foreground">Lun-Sáb 10AM-9PM
                       Aerografía profesional
                     </p>
                   </div>
                   <div className="rounded-xl bg-muted/30 p-5">
                     <Shield className="mx-auto size-8 text-primary" />
-                    <p className="mt-2 text-2xl font-bold text-foreground">24/7</p>
-                    <p className="text-xs text-muted-foreground">
+                    <p className="mt-2 text-2xl font-bold text-foreground">10-21</p>
+                    <p className="text-xs text-muted-foreground">Lun-Sáb 10AM-9PM
                       Atención de emergencias
                     </p>
                   </div>
@@ -372,7 +372,7 @@ export default function Home() {
                   <li className="flex items-start gap-3">
                     <Shield className="mt-0.5 size-4 flex-shrink-0 text-primary" />
                     <span>
-                      <strong className="text-foreground">Material desechable:</strong>{" "}
+                      <strong className="text-foreground">Material estéril y desechable:</strong>{" "}
                       100% esterilizado y desechable para cada cliente.
                     </span>
                   </li>
@@ -485,7 +485,7 @@ export default function Home() {
                 },
                 {
                   q: "¿Qué estilos de tatuaje realiza Wilfren Jiménez?",
-                  a: "Domina realismo, línea fina, lettering, blackwork, microrealismo, geometría sagrada y proyectos personalizados.",
+                  a: "Domina realismo, línea fina, lettering, blackwork, micro realismo, geometría sagrada y proyectos personalizados.",
                 },
                 {
                   q: "¿Cuánto cuesta un tatuaje en Santiago?",
@@ -505,7 +505,7 @@ export default function Home() {
                 },
                 {
                   q: "¿Tienen protocolos de bioseguridad?",
-                  a: "Sí: material 100% desechable, esterilización certificada, estudio privado con cita previa y tintas de primera calidad.",
+                  a: "Sí: material estéril y desechable de uso individual para cada cliente, esterilización certificada, estudio privado con cita previa y tintas de primera calidad.",
                 },
                 {
                   q: "¿Cómo agendo mi sesión?",
@@ -668,7 +668,7 @@ export default function Home() {
                   latitude: BUSINESS.geo.latitude,
                   longitude: BUSINESS.geo.longitude,
                 },
-                openingHours: "Mo-Su 00:00-24:00",
+                openingHours: "Mo-Sa 10:00-21:00",
                 priceRange: "$$",
                 founder: { "@type": "Person", name: BUSINESS.artist },
                 sameAs: BUSINESS.instagrams.map((ig) => ig.url),
@@ -705,7 +705,7 @@ export default function Home() {
                     name: "¿Qué estilos de tatuaje realiza Wilfren Jiménez?",
                     acceptedAnswer: {
                       "@type": "Answer",
-                      text: "Wilfren Jiménez domina realismo, línea fina (fine line), lettering, blackwork, microrealismo, geometría sagrada y proyectos 100% personalizados.",
+                      text: "Wilfren Jiménez domina realismo, línea fina (fine line), lettering, blackwork, micro realismo, geometría sagrada y proyectos 100% personalizados.",
                     },
                   },
                   {

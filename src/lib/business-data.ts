@@ -20,7 +20,7 @@ export const BUSINESS = {
   addressRegion: "Región Metropolitana",
   addressCountry: "Chile",
   postalCode: "7500000",
-  hours: "Abierto las 24 horas",
+  hours: "Lunes a Sábado de 10:00 AM a 9:00 PM - Prevista cita y horarios flexibles",
   mapsUrl: "https://maps.google.com/?q=Guardia+Vieja+181+Providencia+Santiago+Chile",
   logoUrl: "/logo.jpg",
   bannerUrl: "/banner.jpg",
@@ -178,7 +178,7 @@ export const SERVICES: Service[] = [
   },
   {
     slug: "tatuaje-microrealismo",
-    title: "Tatuaje Microrealismo",
+    title: "Tatuaje Micro Realismo",
     shortDescription:
       "Realismo en miniatura: detalles diminutos con alta fidelidad.",
     longDescription:

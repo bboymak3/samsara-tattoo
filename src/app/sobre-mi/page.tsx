@@ -80,7 +80,7 @@ export default function SobreMiPage() {
         description:
           "Artista visual y corporal con 11 años de trayectoria en la industria del arte y el tatuaje, radicado en Providencia, Santiago.",
         url: `${BUSINESS.url}/sobre-mi`,
-        image: `${BUSINESS.url}/logo.jpg`,
+        image: `${BUSINESS.url}/images/samsara-tattoo-estudio-tatuajes-en-santiago-chile.jpeg`,
         worksFor: {
           "@type": "Organization",
           name: "Samsara Tattoo Studio",

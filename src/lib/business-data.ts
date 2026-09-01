@@ -6,7 +6,7 @@ export const BUSINESS = {
   artist: "Wilfren Jiménez",
   artistName: "Wilfren Jiménez",
   artistRole: "Artista Corporal y Visual",
-  url: "https://samsara-tattoo.pages.dev",
+  url: "https://samsaratattoostgo.com",
   tagline:
     "Si tienes planes de realizar un nuevo proyecto, te puedo acompañar en el proceso de creación para que tu idea junto a mi experiencia creemos algo único y personalizado.",
   experienceYears: 11,
@@ -22,7 +22,7 @@ export const BUSINESS = {
   postalCode: "7500000",
   hours: "Lunes a Sábado de 10:00 AM a 9:00 PM - Prevista cita y horarios flexibles",
   mapsUrl: "https://maps.google.com/?q=Guardia+Vieja+181+Providencia+Santiago+Chile",
-  logoUrl: "/logo.jpg",
+  logoUrl: "/images/samsara-tattoo-estudio-tatuajes-en-santiago-chile.jpeg",
   bannerUrl: "/banner.jpg",
   faviconUrl: "/favicon.jpg",
   geo: {

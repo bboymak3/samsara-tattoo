@@ -655,6 +655,8 @@ export default function Home() {
                 url: BUSINESS.url,
                 telephone: `+${BUSINESS.phoneRaw}`,
                 image: `${BUSINESS.url}/images/estudio-de-tatuajes-providencia.jpg`,
+                logo: `${BUSINESS.url}/images/samsara-tattoo-estudio-tatuajes-en-santiago-chile.jpeg`,
+                priceRange: "$$",
                 address: {
                   "@type": "PostalAddress",
                   streetAddress: BUSINESS.addressStreet,
@@ -668,10 +670,28 @@ export default function Home() {
                   latitude: BUSINESS.geo.latitude,
                   longitude: BUSINESS.geo.longitude,
                 },
-                openingHours: "Mo-Sa 10:00-21:00",
-                priceRange: "$$",
+                openingHoursSpecification: [
+                  {
+                    "@type": "OpeningHoursSpecification",
+                    dayOfWeek: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"],
+                    opens: "10:00",
+                    closes: "21:00",
+                  },
+                ],
                 founder: { "@type": "Person", name: BUSINESS.artist },
                 sameAs: BUSINESS.instagrams.map((ig) => ig.url),
+                hasOfferCatalog: {
+                  "@type": "OfferCatalog",
+                  name: "Servicios de Tatuaje y Arte",
+                  itemListElement: [
+                    { "@type": "Offer", itemOffered: { "@type": "Service", name: "Tatuaje Realismo" } },
+                    { "@type": "Offer", itemOffered: { "@type": "Service", name: "Tatuaje Línea Fina" } },
+                    { "@type": "Offer", itemOffered: { "@type": "Service", name: "Tatuaje Lettering" } },
+                    { "@type": "Offer", itemOffered: { "@type": "Service", name: "Tatuaje Blackwork" } },
+                    { "@type": "Offer", itemOffered: { "@type": "Service", name: "Aerografía" } },
+                    { "@type": "Offer", itemOffered: { "@type": "Service", name: "Pintura Acrílica" } },
+                  ],
+                },
               },
               {
                 "@type": "ArtGallery",

@@ -501,7 +501,7 @@ export default function Home() {
                 },
                 {
                   q: "¿El servicio tiene garantía?",
-                  a: "Sí, todos nuestros servicios cuentan con garantía de satisfacción. Si no quedas conforme, volvemos a realizar el retoque sin costo.",
+                  a: "Garantía de satisfacción. Después de la cicatrización, revisamos cada tatuaje para evaluar su resultado. Si requiere un retoque debido al proceso normal de cicatrización, este se realizará sin costo adicional, según evaluación del artista. La garantía no incluye cambios en el diseño, modificaciones solicitadas posteriormente por el cliente ni daños ocasionados por un cuidado inadecuado.",
                 },
                 {
                   q: "¿Tienen protocolos de bioseguridad?",
@@ -742,6 +742,14 @@ export default function Home() {
                     acceptedAnswer: {
                       "@type": "Answer",
                       text: `Puedes agendar por WhatsApp al ${BUSINESS.phoneDisplay} o mediante el formulario de contacto en la web. Cotizamos tu idea y coordinamos fecha.`,
+                    },
+                  },
+                  {
+                    "@type": "Question",
+                    name: "¿El servicio tiene garantía?",
+                    acceptedAnswer: {
+                      "@type": "Answer",
+                      text: "Garantía de satisfacción. Después de la cicatrización, revisamos cada tatuaje para evaluar su resultado. Si requiere un retoque debido al proceso normal de cicatrización, este se realizará sin costo adicional, según evaluación del artista. La garantía no incluye cambios en el diseño, modificaciones solicitadas posteriormente por el cliente ni daños ocasionados por un cuidado inadecuado.",
                     },
                   },
                 ],

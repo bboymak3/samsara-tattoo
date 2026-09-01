@@ -72,7 +72,7 @@ const FAQS = [
   },
   {
     q: "¿El servicio tiene garantía?",
-    a: "Sí, todos nuestros servicios cuentan con garantía de satisfacción. Si no quedas conforme, volvemos a realizar el retoque sin costo adicional.",
+    a: "Garantía de satisfacción. Después de la cicatrización, revisamos cada tatuaje para evaluar su resultado. Si requiere un retoque debido al proceso normal de cicatrización, este se realizará sin costo adicional, según evaluación del artista. La garantía no incluye cambios en el diseño, modificaciones solicitadas posteriormente por el cliente ni daños ocasionados por un cuidado inadecuado.",
   },
   {
     q: "¿Limpian tapicería de autos, alfombras y muebles?",

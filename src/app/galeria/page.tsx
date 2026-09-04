@@ -7,6 +7,7 @@ import { SiteFooter } from "@/components/site-footer";
 import { WhatsAppFloat } from "@/components/whatsapp-float";
 import { ImageGallery } from "@/components/image-gallery";
 import { GALLERY_IMAGES } from "@/lib/gallery-images";
+import { GALLERY_IMAGES_V2 } from "@/lib/gallery-images-v2";
 import { BUSINESS, buildWhatsAppUrl } from "@/lib/business-data";
 import { Camera, MessageCircle, ArrowLeft } from "lucide-react";
 
@@ -107,6 +108,65 @@ export default function GaleriaPage() {
         <section className="py-16">
           <div className="container mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
             <ImageGallery />
+          </div>
+        </section>
+
+        {/* Nueva Galería de Arte y Tatuaje */}
+        <section className="border-t border-border bg-gradient-to-b from-zinc-950/50 to-background py-16">
+          <div className="container mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+            <div className="mb-8 text-center">
+              <Badge variant="outline" className="mb-4 border-primary/30 text-primary">
+                <Camera className="mr-1.5 size-3.5" />
+                Nueva Colección 2026
+              </Badge>
+              <h2 className="text-3xl font-bold text-foreground md:text-4xl">
+                Nueva Galería de Arte y Tatuaje
+              </h2>
+              <p className="mt-3 text-muted-foreground max-w-2xl mx-auto">
+                El tatuaje que tanto deseas: realismo, línea fina, lettering, cover up,
+                micro realismo y más. 83 trabajos realizados por Wilfren Jiménez en distintas
+                comunas de Santiago de Chile.
+              </p>
+            </div>
+
+            {/* Grid de nueva galería */}
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+              {GALLERY_IMAGES_V2.map((img, i) => (
+                <a
+                  key={i}
+                  href={img.src}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="group relative aspect-square overflow-hidden rounded-lg border border-border"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={img.src}
+                    alt={img.alt}
+                    loading="lazy"
+                    className="size-full object-cover transition-transform duration-300 group-hover:scale-110"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 transition-opacity group-hover:opacity-100">
+                    <span className="absolute bottom-2 left-2 right-2 text-xs font-medium text-white line-clamp-2">
+                      {img.alt}
+                    </span>
+                  </div>
+                </a>
+              ))}
+            </div>
+
+            <div className="mt-8 text-center">
+              <Button asChild>
+                <a
+                  href={buildWhatsAppUrl("Hola Wilfren, vi tu nueva galería de tatuajes y quiero cotizar uno")}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <MessageCircle className="mr-2 size-5" />
+                  Cotizar mi tatuaje
+                </a>
+              </Button>
+            </div>
           </div>
         </section>
 

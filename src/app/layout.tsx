@@ -60,7 +60,7 @@ export const metadata: Metadata = {
   icons: {
     icon: "/favicon.jpg",
     shortcut: "/favicon.jpg",
-    apple: "/images/samsara-tattoo-estudio-tatuajes-en-santiago-chile.jpeg",
+    apple: "/images/samsara-tattoo-studio-logo-oficial.jpeg",
   },
   openGraph: {
     type: "website",
@@ -80,8 +80,8 @@ export const metadata: Metadata = {
         type: "image/jpeg",
       },
       {
-        url: `${BUSINESS.url}/images/samsara-tattoo-estudio-tatuajes-en-santiago-chile.jpeg`,
-        secureUrl: `${BUSINESS.url}/images/samsara-tattoo-estudio-tatuajes-en-santiago-chile.jpeg`,
+        url: `${BUSINESS.url}/images/samsara-tattoo-studio-logo-oficial.jpeg`,
+        secureUrl: `${BUSINESS.url}/images/samsara-tattoo-studio-logo-oficial.jpeg`,
         width: 1200,
         height: 630,
         alt: "Logo Samsara Tattoo Studio - Tatuajes en Santiago de Chile",

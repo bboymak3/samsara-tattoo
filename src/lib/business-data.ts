@@ -22,7 +22,7 @@ export const BUSINESS = {
   postalCode: "7500000",
   hours: "Lunes a Sábado de 10:00 AM a 9:00 PM - Prevista cita y horarios flexibles",
   mapsUrl: "https://maps.google.com/?q=Guardia+Vieja+181+Providencia+Santiago+Chile",
-  logoUrl: "/images/samsara-tattoo-estudio-tatuajes-en-santiago-chile.jpeg",
+  logoUrl: "/images/samsara-tattoo-studio-logo-oficial.jpeg",
   bannerUrl: "/banner.jpg",
   faviconUrl: "/favicon.jpg",
   geo: {

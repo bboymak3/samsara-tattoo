@@ -74,7 +74,6 @@ export default function GaleriaVideosPage() {
                       <Badge variant="secondary" className="text-xs capitalize">
                         {video.category.replace("-", " ")}
                       </Badge>
-                      <span className="text-xs text-muted-foreground capitalize">{video.comuna.replace("-", " ")}</span>
                     </div>
                     <h3 className="mb-2 text-lg font-bold text-foreground">{video.title}</h3>
                     <p className="text-sm leading-relaxed text-muted-foreground">

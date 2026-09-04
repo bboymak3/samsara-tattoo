@@ -477,7 +477,6 @@ export default function Home() {
                       <span className="rounded bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary capitalize">
                         {video.category.replace("-", " ")}
                       </span>
-                      <span className="text-xs text-muted-foreground capitalize">{video.comuna.replace("-", " ")}</span>
                     </div>
                     <h3 className="mb-1 text-sm font-bold text-foreground">{video.title}</h3>
                     <p className="text-xs leading-relaxed text-muted-foreground line-clamp-3">

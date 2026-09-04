@@ -51,7 +51,7 @@ export function SiteNavbar() {
           <img
             src={BUSINESS.logoUrl}
             alt="Samsara Tattoo Studio"
-            className="size-10 rounded-lg"
+            className="size-12 rounded-lg"
           />
           <span className="hidden flex-col leading-none sm:flex">
             <span className="text-sm font-semibold tracking-wide text-foreground">

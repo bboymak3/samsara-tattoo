@@ -35,6 +35,7 @@ import { SiteNavbar } from "@/components/site-navbar";
 import { SiteFooter } from "@/components/site-footer";
 import { WhatsAppFloat } from "@/components/whatsapp-float";
 import { ImageGallery } from "@/components/image-gallery";
+import { GALLERY_IMAGES_V2 } from "@/lib/gallery-images-v2";
 import {
   EstudioModal,
   TatuadorModal,
@@ -338,6 +339,100 @@ export default function Home() {
               <Button asChild variant="outline">
                 <Link href="/galeria">
                   Ver galería completa
+                  <ArrowRight className="ml-2 size-4" />
+                </Link>
+              </Button>
+            </div>
+          </div>
+        </section>
+
+        {/* ─── NUEVA GALERÍA DE ARTE Y TATUAJE ─── */}
+        <section className="border-b border-border bg-gradient-to-b from-zinc-950/50 to-background py-20">
+          <div className="container mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+            <div className="mb-10 text-center">
+              <Badge variant="outline" className="mb-4 border-primary/30 text-primary">
+                <ImageIcon className="size-3.5 mr-1.5" />
+                Nueva Colección 2026
+              </Badge>
+              <h2 className="text-3xl font-bold text-foreground md:text-4xl">
+                Nueva Galería de Arte y Tatuaje
+              </h2>
+              <p className="mx-auto mt-3 max-w-2xl text-muted-foreground">
+                El tatuaje que tanto deseas: realismo, línea fina, lettering, cover up,
+                micro realismo y más. Trabajos realizados por Wilfren Jiménez en Santiago de Chile.
+              </p>
+            </div>
+
+            {/* Grid de 25 imágenes de la nueva galería */}
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+              {GALLERY_IMAGES_V2.slice(0, 25).map((img, i) => (
+                <a
+                  key={i}
+                  href={img.src}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="group relative aspect-square overflow-hidden rounded-lg border border-border"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={img.src}
+                    alt={img.alt}
+                    loading="lazy"
+                    className="size-full object-cover transition-transform duration-300 group-hover:scale-110"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 transition-opacity group-hover:opacity-100">
+                    <span className="absolute bottom-2 left-2 right-2 text-xs font-medium text-white line-clamp-2">
+                      {img.alt}
+                    </span>
+                  </div>
+                </a>
+              ))}
+            </div>
+
+            {/* Textos descriptivos */}
+            <div className="mt-10 grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+              <div className="rounded-xl border border-border bg-card p-6">
+                <h3 className="mb-2 text-lg font-bold text-foreground">Realismo y Sombras</h3>
+                <p className="text-sm text-muted-foreground leading-relaxed">
+                  Especialistas en tatuaje realista con sombras suaves y detalladas en Providencia, Las Condes y Ñuñoa. Retratos, animales y paisajes con la calidad de un taller formal, directamente en tu domicilio o en nuestro estudio privado en Santiago de Chile. Wilfren Jiménez, 11 años de experiencia.
+                </p>
+              </div>
+              <div className="rounded-xl border border-border bg-card p-6">
+                <h3 className="mb-2 text-lg font-bold text-foreground">Línea Fina y Minimalista</h3>
+                <p className="text-sm text-muted-foreground leading-relaxed">
+                  Tatuajes delicados con trazos finos y diseños minimalistas en Las Condes, La Reina y Vitacura. Flores, símbolos y detalles sutiles que realzan tu piel. Trabajo profesional con materiales estériles de uso individual, garantizando seguridad y precisión en cada pieza realizada en Santiago.
+                </p>
+              </div>
+              <div className="rounded-xl border border-border bg-card p-6">
+                <h3 className="mb-2 text-lg font-bold text-foreground">Cover Up y Reparación</h3>
+                <p className="text-sm text-muted-foreground leading-relaxed">
+                  ¿Tatuaje viejo que quieres tapar? Cover up profesional en Macul, San Miguel y Lo Barnechea. Reparamos trabajos anteriores con técnicas de arreglo de tinta, cobertura total y rediseño. Transformamos tu tatuaje antiguo en una obra nueva que te encante, con resultado natural y profesional.
+                </p>
+              </div>
+              <div className="rounded-xl border border-border bg-card p-6">
+                <h3 className="mb-2 text-lg font-bold text-foreground">Lettering y Caligrafía</h3>
+                <p className="text-sm text-muted-foreground leading-relaxed">
+                  Tatuajes de letras, frases y nombres con caligrafía artística en Vitacura, Providencia y Santiago. Estilos cursiva, gótica y moderna. Diseños exclusivos para parejas y personas que buscan plasmar significados especiales en su piel con elegancia y precisión técnica.
+                </p>
+              </div>
+              <div className="rounded-xl border border-border bg-card p-6">
+                <h3 className="mb-2 text-lg font-bold text-foreground">Manga y Antebrazo</h3>
+                <p className="text-sm text-muted-foreground leading-relaxed">
+                  Proyectos de gran formato: manga completa, antebrazo y brazo entero. Animales, leones, tigres y composiciones detalladas. Trabajo multi-sesión con planificación profesional en Providencia, Ñuñoa y Lo Barnechea. Cada proyecto se diseña a medida según tu estilo y anatomía.
+                </p>
+              </div>
+              <div className="rounded-xl border border-border bg-card p-6">
+                <h3 className="mb-2 text-lg font-bold text-foreground">Micro Realismo</h3>
+                <p className="text-sm text-muted-foreground leading-relaxed">
+                  Detalles minúsculos con precisión milimétrica en San Miguel, Macul y La Reina. Tatuajes pequeños pero llenos de detalle: retratos en miniatura, paisajes compactos y símbolos con sombras sutiles. La especialidad más exigente del tatuaje, dominada por Wilfren Jiménez en Santiago.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-10 text-center">
+              <Button asChild>
+                <Link href="/galeria">
+                  Ver galería completa (83 fotos)
                   <ArrowRight className="ml-2 size-4" />
                 </Link>
               </Button>
@@ -655,7 +750,7 @@ export default function Home() {
                 url: BUSINESS.url,
                 telephone: `+${BUSINESS.phoneRaw}`,
                 image: `${BUSINESS.url}/images/estudio-de-tatuajes-providencia.jpg`,
-                logo: `${BUSINESS.url}/images/samsara-tattoo-estudio-tatuajes-en-santiago-chile.jpeg`,
+                logo: `${BUSINESS.url}/images/samsara-tattoo-studio-logo-oficial.jpeg`,
                 priceRange: "$$",
                 address: {
                   "@type": "PostalAddress",

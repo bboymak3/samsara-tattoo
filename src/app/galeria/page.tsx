@@ -12,14 +12,14 @@ import { BUSINESS, buildWhatsAppUrl } from "@/lib/business-data";
 import { Camera, MessageCircle, ArrowLeft, Video } from "lucide-react";
 
 export const metadata: Metadata = {
-  title: "Galería de Tatuajes y Aerografía en Santiago | Samsara",
+  title: "Galería de Tatuajes, Fotos y Videos en Santiago | Samsara",
   description:
-    "Galería con fotos reales de tatuajes y obras de aerografía realizadas por Wilfren Jiménez en distintas comunas de Santiago de Chile. Realismo, línea fina, blackwork, lettering y más.",
+    "Galería con 83 fotos y 11 videos de tatuajes realizados por Wilfren Jiménez en Santiago de Chile. Realismo, línea fina, cover up, lettering, manga, micro realismo y aerografía. Mira los videos en acción.",
   alternates: { canonical: "/galeria" },
   openGraph: {
-    title: "Galería de Tatuajes y Aerografía en Santiago | Samsara",
+    title: "Galería de Tatuajes, Fotos y Videos en Santiago | Samsara",
     description:
-      "Fotos reales de trabajos de tatuaje y aerografía profesional en Santiago de Chile.",
+      "83 fotos y 11 videos de trabajos de tatuaje profesional en Santiago de Chile. Realismo, línea fina, cover up y más.",
     type: "website",
     locale: "es_CL",
     images: [

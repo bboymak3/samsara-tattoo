@@ -907,6 +907,21 @@ export default function Home() {
                   },
                 ],
               },
+              {
+                "@type": "VideoGallery",
+                "@id": `${BUSINESS.url}/#videogallery`,
+                name: `Galería de Videos - ${BUSINESS.name}`,
+                description: "Videos de tatuajes realizados por Wilfren Jiménez en Santiago de Chile: realismo, línea fina, cover up, lettering, manga y micro realismo.",
+                url: `${BUSINESS.url}/galeria-videos`,
+                video: GALLERY_VIDEOS.map((v) => ({
+                  "@type": "VideoObject",
+                  name: v.title,
+                  description: v.description,
+                  thumbnailUrl: `${BUSINESS.url}/images/samsara-tattoo-studio-logo-oficial.jpeg`,
+                  contentUrl: `${BUSINESS.url}${v.src}`,
+                  uploadDate: "2026-09-04",
+                })),
+              },
             ],
           }),
         }}

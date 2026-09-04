@@ -36,6 +36,7 @@ import { SiteFooter } from "@/components/site-footer";
 import { WhatsAppFloat } from "@/components/whatsapp-float";
 import { ImageGallery } from "@/components/image-gallery";
 import { GALLERY_IMAGES_V2 } from "@/lib/gallery-images-v2";
+import { GALLERY_VIDEOS } from "@/lib/gallery-videos";
 import {
   EstudioModal,
   TatuadorModal,
@@ -433,6 +434,64 @@ export default function Home() {
               <Button asChild>
                 <Link href="/galeria">
                   Ver galería completa (83 fotos)
+                  <ArrowRight className="ml-2 size-4" />
+                </Link>
+              </Button>
+            </div>
+          </div>
+        </section>
+
+        {/* ─── GALERÍA DE VIDEOS ─── */}
+        <section className="border-b border-border bg-background py-20">
+          <div className="container mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+            <div className="mb-10 text-center">
+              <Badge variant="outline" className="mb-4 border-primary/30 text-primary">
+                <ImageIcon className="size-3.5 mr-1.5" />
+                Videos
+              </Badge>
+              <h2 className="text-3xl font-bold text-foreground md:text-4xl">
+                Galería de Videos de Tatuajes
+              </h2>
+              <p className="mx-auto mt-3 max-w-2xl text-muted-foreground">
+                Mira en acción los tatuajes realizados por Wilfren Jiménez en Santiago de Chile.
+                Cada video muestra el proceso y resultado final en distintas comunas.
+              </p>
+            </div>
+
+            {/* Grid de videos con texto descriptivo */}
+            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+              {GALLERY_VIDEOS.map((video, i) => (
+                <div key={i} className="overflow-hidden rounded-xl border border-border bg-card">
+                  <div className="relative aspect-video bg-black">
+                    <video
+                      preload="none"
+                      controls
+                      className="size-full object-contain"
+                      poster={`data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='640' height='360'%3E%3Crect fill='%231a1a1a' width='640' height='360'/%3E%3Ctext x='50%25' y='50%25' fill='%23666' font-size='16' text-anchor='middle' dy='.3em'%3E${encodeURIComponent(video.title)}%3C/text%3E%3C/svg%3E`}
+                    >
+                      <source src={video.src} type="video/mp4" />
+                    </video>
+                  </div>
+                  <div className="p-4">
+                    <div className="mb-2 flex items-center gap-2">
+                      <span className="rounded bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary capitalize">
+                        {video.category.replace("-", " ")}
+                      </span>
+                      <span className="text-xs text-muted-foreground capitalize">{video.comuna.replace("-", " ")}</span>
+                    </div>
+                    <h3 className="mb-1 text-sm font-bold text-foreground">{video.title}</h3>
+                    <p className="text-xs leading-relaxed text-muted-foreground line-clamp-3">
+                      {video.description}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-8 text-center">
+              <Button asChild variant="outline">
+                <Link href="/galeria-videos">
+                  Ver todos los videos
                   <ArrowRight className="ml-2 size-4" />
                 </Link>
               </Button>

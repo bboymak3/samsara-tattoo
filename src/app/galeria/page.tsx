@@ -9,7 +9,7 @@ import { ImageGallery } from "@/components/image-gallery";
 import { GALLERY_IMAGES } from "@/lib/gallery-images";
 import { GALLERY_IMAGES_V2 } from "@/lib/gallery-images-v2";
 import { BUSINESS, buildWhatsAppUrl } from "@/lib/business-data";
-import { Camera, MessageCircle, ArrowLeft } from "lucide-react";
+import { Camera, MessageCircle, ArrowLeft, Video } from "lucide-react";
 
 export const metadata: Metadata = {
   title: "Galería de Tatuajes y Aerografía en Santiago | Samsara",
@@ -165,6 +165,16 @@ export default function GaleriaPage() {
                   <MessageCircle className="mr-2 size-5" />
                   Cotizar mi tatuaje
                 </a>
+              </Button>
+            </div>
+
+            {/* Link a galería de videos */}
+            <div className="mt-6 text-center">
+              <Button asChild variant="outline">
+                <Link href="/galeria-videos">
+                  <Video className="mr-2 size-4" />
+                  Ver galería de videos (11 videos)
+                </Link>
               </Button>
             </div>
           </div>

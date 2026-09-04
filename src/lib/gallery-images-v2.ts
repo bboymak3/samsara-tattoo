@@ -95,11 +95,4 @@ export const GALLERY_IMAGES_V2: GalleryImage[] = [
   { src: `${BASE}/estudio-tatuajes-animales-fauna-sanmiguel-samsara.jpeg`, alt: "Animales fauna en San Miguel - Samsara Tattoo", category: "tatuaje", comuna: "san-miguel" },
   { src: `${BASE}/samsara-tattoo-studio-cuello-hombres-sombras-providencia.jpeg`, alt: "Cuello hombres sombras en Providencia - Samsara", category: "tatuaje", comuna: "providencia" },
   { src: `${BASE}/parejas-diseno-exclusivo-santiago-samsara-tattoo.jpeg`, alt: "Parejas diseño exclusivo en Santiago - Samsara", category: "tatuaje", comuna: "santiago" },
-  { src: `${BASE}/cover-up-tatuajes-parejas-lascondes-samsara.jpeg`, alt: "Cover up parejas en Las Condes - Samsara Tattoo", category: "tatuaje", comuna: "las-condes" },
-  { src: `${BASE}/tatuajes-hombres-microrealismo-detalles-nunoa-samsara-tattoo.jpeg`, alt: "Micro realismo detalles en Ñuñoa - Samsara", category: "tatuaje", comuna: "nunoa" },
-  { src: `${BASE}/profesional-bioseguridad-estudio-vitacura-samsara-tattoo.jpeg`, alt: "Bioseguridad estudio en Vitacura - Samsara Tattoo", category: "tatuaje", comuna: "vitacura" },
-  { src: `${BASE}/samsara-tattoo-antebrazo-realismo-sombras-lareina.jpeg`, alt: "Antebrazo realismo sombras en La Reina - Samsara", category: "tatuaje", comuna: "la-reina" },
-  { src: `${BASE}/minimalista-trazos-delicado-mujeres-lobarnechea-samsara-tattoo.jpeg`, alt: "Minimalista trazos mujeres en Lo Barnechea - Samsara", category: "tatuaje", comuna: "lo-barnechea" },
-  { src: `${BASE}/estudio-tatuajes-letras-cursiva-macul-samsara.jpeg`, alt: "Letras cursiva en Macul - Samsara Tattoo Studio", category: "tatuaje", comuna: "macul" },
-  { src: `${BASE}/samsara-tattoo-studio-leones-tigres-aves-sanmiguel.jpeg`, alt: "Leones tigres aves en San Miguel - Samsara Tattoo", category: "tatuaje", comuna: "san-miguel" },
 ];

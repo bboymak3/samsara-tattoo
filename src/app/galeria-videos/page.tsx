@@ -55,28 +55,28 @@ export default function GaleriaVideosPage() {
               </Button>
             </div>
 
-            {/* Grid de videos */}
-            <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
+            {/* Grid de videos 3:4 */}
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
               {GALLERY_VIDEOS.map((video, i) => (
-                <div key={i} className="overflow-hidden rounded-xl border border-border bg-card">
-                  <div className="relative aspect-video bg-black">
+                <div key={i} className="overflow-hidden rounded-lg border border-border bg-card">
+                  <div className="relative aspect-[3/4] bg-black">
                     <video
                       preload="none"
                       controls
                       className="size-full object-contain"
-                      poster={`data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='640' height='360'%3E%3Crect fill='%231a1a1a' width='640' height='360'/%3E%3Ctext x='50%25' y='50%25' fill='%23666' font-size='18' text-anchor='middle' dy='.3em'%3E${encodeURIComponent(video.title)}%3C/text%3E%3C/svg%3E`}
+                      poster={`data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='400'%3E%3Crect fill='%231a1a1a' width='300' height='400'/%3E%3Ctext x='50%25' y='50%25' fill='%23666' font-size='14' text-anchor='middle' dy='.3em'%3E${encodeURIComponent(video.title)}%3C/text%3E%3C/svg%3E`}
                     >
                       <source src={video.src} type="video/mp4" />
                     </video>
                   </div>
-                  <div className="p-5">
-                    <div className="mb-2 flex items-center gap-2">
-                      <Badge variant="secondary" className="text-xs capitalize">
+                  <div className="p-3">
+                    <div className="mb-1 flex items-center gap-1">
+                      <Badge variant="secondary" className="text-[10px] capitalize">
                         {video.category.replace("-", " ")}
                       </Badge>
                     </div>
-                    <h3 className="mb-2 text-lg font-bold text-foreground">{video.title}</h3>
-                    <p className="text-sm leading-relaxed text-muted-foreground">
+                    <h3 className="mb-1 text-sm font-bold text-foreground line-clamp-1">{video.title}</h3>
+                    <p className="text-xs leading-snug text-muted-foreground line-clamp-2">
                       {video.description}
                     </p>
                   </div>

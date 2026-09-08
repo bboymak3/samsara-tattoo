@@ -146,11 +146,6 @@ export default function GaleriaPage() {
                     loading="lazy"
                     className="size-full object-cover transition-transform duration-300 group-hover:scale-110"
                   />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 transition-opacity group-hover:opacity-100">
-                    <span className="absolute bottom-2 left-2 right-2 text-xs font-medium text-white line-clamp-2">
-                      {img.alt}
-                    </span>
-                  </div>
                 </a>
               ))}
             </div>

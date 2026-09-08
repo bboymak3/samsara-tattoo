@@ -93,6 +93,5 @@ export const GALLERY_IMAGES_V2: GalleryImage[] = [
   { src: `${BASE}/samsara-tattoo-manga-completa-brazo-lobarnechea.jpeg`, alt: "Manga completa brazo en Lo Barnechea - Samsara", category: "tatuaje", comuna: "lo-barnechea" },
   { src: `${BASE}/lettering-caligrafia-frases-diseno-macul-samsara-tattoo.jpeg`, alt: "Lettering caligrafía frases en Macul - Samsara", category: "tatuaje", comuna: "macul" },
   { src: `${BASE}/estudio-tatuajes-animales-fauna-sanmiguel-samsara.jpeg`, alt: "Animales fauna en San Miguel - Samsara Tattoo", category: "tatuaje", comuna: "san-miguel" },
-  { src: `${BASE}/samsara-tattoo-studio-cuello-hombres-sombras-providencia.jpeg`, alt: "Cuello hombres sombras en Providencia - Samsara", category: "tatuaje", comuna: "providencia" },
   { src: `${BASE}/parejas-diseno-exclusivo-santiago-samsara-tattoo.jpeg`, alt: "Parejas diseño exclusivo en Santiago - Samsara", category: "tatuaje", comuna: "santiago" },
 ];

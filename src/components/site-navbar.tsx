@@ -48,11 +48,6 @@ export function SiteNavbar() {
           className="flex items-center gap-2.5"
           aria-label="Samsara Tattoo Studio - Inicio"
         >
-          <img
-            src={BUSINESS.logoUrl}
-            alt="Samsara Tattoo Studio"
-            className="size-12 rounded-lg"
-          />
           <span className="hidden flex-col leading-none sm:flex">
             <span className="text-sm font-semibold tracking-wide text-foreground">
               SAMSARA
